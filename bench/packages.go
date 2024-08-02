@@ -174,6 +174,16 @@ func (p *Package) runBenchmark(ctx context.Context, benchTime, benchName string)
 				result.CPU.Key = sub.Key
 			}
 		}
+
+		// Log upload output to stdout.
+		// TODO(bryan): Make stdout stream configurable.
+		err = json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
+			"benchmark":     result,
+			"upload_result": res,
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &result, nil
