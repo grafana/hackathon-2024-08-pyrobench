@@ -74,8 +74,9 @@ func (p *Package) listBenchmarks(ctx context.Context) error {
 }
 
 type profileResult struct {
-	Key   string
-	Total int64
+	Key              string
+	Total            int64
+	FlameGraphComURL string
 }
 
 type benchmarkResult struct {
@@ -168,21 +169,18 @@ func (p *Package) runBenchmark(ctx context.Context, benchTime, benchName string)
 			switch sub.Name {
 			case "alloc_objects":
 				result.AllocObjects.Key = sub.Key
+
+				// TODO(bryan) Link to specific sub-profile. For some reason
+				// flamegraph.com does not like building links directly to
+				// sub-profiles.
+				result.AllocObjects.FlameGraphComURL = res.URL
 			case "alloc_space":
 				result.AllocSpace.Key = sub.Key
+				result.AllocSpace.FlameGraphComURL = res.URL
 			case "cpu":
 				result.CPU.Key = sub.Key
+				result.CPU.FlameGraphComURL = res.URL
 			}
-		}
-
-		// Log upload output to stdout.
-		// TODO(bryan): Make stdout stream configurable.
-		err = json.NewEncoder(os.Stdout).Encode(map[string]interface{}{
-			"benchmark":     result,
-			"upload_result": res,
-		})
-		if err != nil {
-			return nil, err
 		}
 	}
 

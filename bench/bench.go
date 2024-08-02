@@ -3,8 +3,10 @@ package bench
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -250,12 +252,19 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 				)
 			}
 		}
+
+		// TODO(bryan): This is the output stream. The github action will
+		// forward this to later steps in the job, ultimately using this info to
+		// build the report comment. We should make this configurable.
+		output := os.Stdout
+
 		if r.base != nil {
 			res, err := r.result.base.runBenchmark(ctx, args.BenchTime, r.key.benchmark)
 			if err != nil {
 				level.Error(b.logger).Log("msg", "error running benchmark", "package", r.base.meta.ImportPath, "benchmark", r.key.benchmark, "err", err)
 			}
 			handleResult("base", res)
+			ExportResults(output, b.baseCommit, res)
 		}
 		if r.head != nil {
 			res, err := r.result.head.runBenchmark(ctx, args.BenchTime, r.key.benchmark)
@@ -263,11 +272,24 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 				level.Error(b.logger).Log("msg", "error running benchmark", "package", r.base.meta.ImportPath, "benchmark", r.key.benchmark, "err", err)
 			}
 			handleResult("head", res)
+			ExportResults(output, b.headCommit, res)
 		}
 		level.Info(b.logger).Log(append([]interface{}{"msg", "benchmark results", "package", r.key.packagePath, "benchmark", r.key.benchmark}, logFields...)...)
 	}
 
 	return nil
+}
+
+func ExportResults(out io.Writer, ref string, result *benchmarkResult) error {
+	type Result struct {
+		Ref       string           `json:"ref"`
+		Benchmark *benchmarkResult `json:"benchmark"`
+	}
+
+	return json.NewEncoder(out).Encode(Result{
+		Ref:       ref,
+		Benchmark: result,
+	})
 }
 
 type resultKey struct {
