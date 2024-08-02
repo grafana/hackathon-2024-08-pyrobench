@@ -164,14 +164,26 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 	for _, r := range res {
 		logFields := []interface{}{}
 		handleResult := func(name string, res *benchmarkResult) {
-			if res.CPUProfileKey != "" {
-				logFields = append(logFields, name+"_cpu", res.CPUProfileKey)
+			if res.CPU.Key != "" {
+				k := name + "_cpu"
+				logFields = append(logFields,
+					k, res.CPU.Key,
+					k+"_total", res.CPU.Total,
+				)
 			}
-			if res.AllocBytesProfileKey != "" {
-				logFields = append(logFields, name+"_alloc_bytes", res.AllocBytesProfileKey)
+			if res.AllocSpace.Key != "" {
+				k := name + "_alloc_space"
+				logFields = append(logFields,
+					k, res.AllocSpace.Key,
+					k+"_total", res.AllocSpace.Total,
+				)
 			}
-			if res.AllocCountProfileKey != "" {
-				logFields = append(logFields, name+"_alloc_objects", res.AllocCountProfileKey)
+			if res.AllocObjects.Key != "" {
+				k := name + "_alloc_objects"
+				logFields = append(logFields,
+					k, res.AllocObjects.Key,
+					k+"_total", res.AllocObjects.Total,
+				)
 			}
 		}
 		if r.base != nil {
@@ -188,6 +200,7 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 			}
 			handleResult("head", res)
 		}
+		level.Info(b.logger).Log(append([]interface{}{"msg", "benchmark results", "package", r.key.packagePath, "benchmark", r.key.benchmark}, logFields...)...)
 	}
 
 	return nil

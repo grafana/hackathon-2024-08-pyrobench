@@ -5,6 +5,7 @@ go 1.22.5
 require (
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/go-kit/log v0.2.1
+	github.com/google/pprof v0.0.0-20240727154555-813a5fbdbec8
 	github.com/stretchr/testify v1.8.2
 	golang.org/x/sync v0.7.0
 )

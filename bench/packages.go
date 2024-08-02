@@ -8,13 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"github.com/google/pprof/profile"
 )
 
 type Package struct {
@@ -73,58 +73,26 @@ func (p *Package) listBenchmarks(ctx context.Context) error {
 	return c.Wait()
 }
 
-type profileResponse struct {
-	URL         string `json:"url"`
-	Key         string `json:"key"`
-	SubProfiles []struct {
-		Key  string `json:"key"`
-		Name string `json:"name"`
-	} `json:"suProfiles"`
-}
-
-func uploadProfile(ctx context.Context, logger log.Logger, body io.Reader) (*profileResponse, error) {
-	req, err := http.NewRequestWithContext(ctx, "POST", "https://flamegraph.com", body)
-	if err != nil {
-		return nil, err
-	}
-
-	// TODO: Fill refere to point to github PR
-	req.Header.Set("user-agent", "pyrobench")
-	req.Header.Set("content-type", "application/octet-stream")
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	x, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("failed to upload profile: [%d] msg=%s", resp.StatusCode, string(x))
-	}
-
-	result := profileResponse{}
-	err = json.Unmarshal(x, &result)
-	if err != nil {
-		return nil, err
-	}
-
-	logger.Log("msg", "uploaded profile", "url", result.URL)
-
-	return &result, nil
-
+type profileResult struct {
+	Key   string
+	Total int64
 }
 
 type benchmarkResult struct {
-	ImportPath           string
-	Name                 string
-	AllocCountProfileKey string
-	AllocBytesProfileKey string
-	CPUProfileKey        string
+	ImportPath string
+	Name       string
+
+	AllocObjects profileResult
+	AllocSpace   profileResult
+	CPU          profileResult
+}
+
+func sumProfiles(p *profile.Profile, typeIdx int) int64 {
+	var sum int64
+	for _, sample := range p.Sample {
+		sum += sample.Value[typeIdx]
+	}
+	return sum
 }
 
 func (p *Package) runBenchmark(ctx context.Context, benchTime, benchName string) (*benchmarkResult, error) {
@@ -160,28 +128,50 @@ func (p *Package) runBenchmark(ctx context.Context, benchTime, benchName string)
 		Name:       benchName,
 	}
 
-	for _, prof := range []string{cpuProfile, memProfile} {
-		f, err := os.Open(prof)
+	for _, profPath := range []string{cpuProfile, memProfile} {
+		profF, err := os.Open(profPath)
 		if err != nil {
 			return nil, err
 		}
-		defer f.Close()
+		defer profF.Close()
 
 		// TODO: Parse profile values
+		prof, err := profile.Parse(profF)
+		if err != nil {
+			return nil, err
+		}
 
-		res, err := uploadProfile(ctx, p.logger, f)
+		// find the sub-profiles in the types
+		for idx, t := range prof.SampleType {
+			switch t.Type {
+			case "alloc_objects":
+				result.AllocObjects.Total = sumProfiles(prof, idx)
+			case "alloc_space":
+				result.AllocSpace.Total = sumProfiles(prof, idx)
+			case "cpu":
+				result.CPU.Total = sumProfiles(prof, idx)
+			}
+		}
+
+		// rewind file for upload
+		_, err = profF.Seek(0, 0)
+		if err != nil {
+			return nil, err
+		}
+
+		res, err := uploadProfile(ctx, p.logger, profF)
 		if err != nil {
 			return nil, err
 		}
 
 		for _, sub := range res.SubProfiles {
 			switch sub.Name {
-			case "allocs":
-				result.AllocCountProfileKey = sub.Key
-			case "bytes":
-				result.AllocBytesProfileKey = sub.Key
+			case "alloc_objects":
+				result.AllocObjects.Key = sub.Key
+			case "alloc_space":
+				result.AllocSpace.Key = sub.Key
 			case "cpu":
-				result.CPUProfileKey = sub.Key
+				result.CPU.Key = sub.Key
 			}
 		}
 	}
