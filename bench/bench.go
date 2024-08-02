@@ -9,12 +9,56 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"golang.org/x/sync/errgroup"
 )
+
+type contextKey uint8
+
+const (
+	contextKeyCleanup contextKey = iota
+)
+
+type cleaner struct {
+	mtx      sync.Mutex
+	cleanups []func() error
+}
+
+func (c *cleaner) add(f func() error) {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	c.cleanups = append(c.cleanups, f)
+}
+
+func (c *cleaner) cleanup() error {
+	c.mtx.Lock()
+	defer c.mtx.Unlock()
+	var err error
+	l := len(c.cleanups)
+	// cleanup in reverse order
+	for idx := range c.cleanups {
+		err = errors.Join(err, c.cleanups[l-1-idx]())
+	}
+	return err
+}
+
+type cleanupHookFunc func(func() error)
+
+func addCleanupToContext(ctx context.Context, f cleanupHookFunc) context.Context {
+	return context.WithValue(ctx, contextKeyCleanup, f)
+}
+
+func cleanupFromContext(ctx context.Context) cleanupHookFunc {
+	cleanup, ok := ctx.Value(contextKeyCleanup).(cleanupHookFunc)
+	if !ok {
+		panic("cleanup hook not found in context")
+	}
+	return cleanup
+}
 
 type CompareArgs struct {
 	GitBase string
@@ -76,7 +120,18 @@ func (b *Benchmark) gitCheckoutBase(ctx context.Context) error {
 	}
 	b.baseDir = dir
 
-	return exec.CommandContext(ctx, "git", "worktree", "add", b.baseDir, b.baseCommit).Run()
+	err = exec.CommandContext(ctx, "git", "worktree", "add", b.baseDir, b.baseCommit).Run()
+	if err != nil {
+		return err
+	}
+	cleanupFromContext(ctx)(func() error {
+		err := exec.Command("git", "worktree", "remove", b.baseDir).Run()
+		if err != nil {
+			return fmt.Errorf("failed to cleanup git workdir: %w", err)
+		}
+		return nil
+	})
+	return nil
 }
 
 func countPackagesWithTests(packages []Package) int {
@@ -90,6 +145,15 @@ func countPackagesWithTests(packages []Package) int {
 }
 
 func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
+	cleaner := &cleaner{}
+	ctx = addCleanupToContext(ctx, cleaner.add)
+	defer func() {
+		err := cleaner.cleanup()
+		if err != nil {
+			level.Error(b.logger).Log("msg", "error cleaning up", "err", err)
+		}
+	}()
+
 	err := b.prerequisites(ctx)
 	if err != nil {
 		return fmt.Errorf("error checking prerequisites: %w", err)

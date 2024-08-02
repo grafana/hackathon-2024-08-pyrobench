@@ -192,6 +192,10 @@ func (p *Package) compileTest(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	cleanupFromContext(ctx)(func() error {
+		return os.Remove(tmpFile.Name())
+	})
+
 	p.testBinary = tmpFile.Name()
 	err = tmpFile.Close()
 	if err != nil {
