@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -86,6 +85,12 @@ type Benchmark struct {
 	headDir      string
 	headCommit   string
 	headPackages []Package
+}
+
+type BenchmarkResult struct {
+	Ref       string           `json:"ref"`
+	Type      string           `json:"type"`
+	Benchmark *benchmarkResult `json:"benchmark"`
 }
 
 func New(logger log.Logger) *Benchmark {
@@ -264,7 +269,15 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 				level.Error(b.logger).Log("msg", "error running benchmark", "package", r.base.meta.ImportPath, "benchmark", r.key.benchmark, "err", err)
 			}
 			handleResult("base", res)
-			ExportResults(output, b.baseCommit, res)
+			err = json.NewEncoder(output).Encode(BenchmarkResult{
+				Ref:       b.baseCommit,
+				Type:      "base",
+				Benchmark: res,
+			})
+			if err != nil {
+				level.Error(b.logger).Log("msg", "error encoding baseline benchmark result", "err", err)
+				return err
+			}
 		}
 		if r.head != nil {
 			res, err := r.result.head.runBenchmark(ctx, args.BenchTime, r.key.benchmark)
@@ -272,24 +285,20 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 				level.Error(b.logger).Log("msg", "error running benchmark", "package", r.base.meta.ImportPath, "benchmark", r.key.benchmark, "err", err)
 			}
 			handleResult("head", res)
-			ExportResults(output, b.headCommit, res)
+			err = json.NewEncoder(output).Encode(BenchmarkResult{
+				Ref:       b.headCommit,
+				Type:      "head",
+				Benchmark: res,
+			})
+			if err != nil {
+				level.Error(b.logger).Log("msg", "error head encoding benchmark result", "err", err)
+				return err
+			}
 		}
 		level.Info(b.logger).Log(append([]interface{}{"msg", "benchmark results", "package", r.key.packagePath, "benchmark", r.key.benchmark}, logFields...)...)
 	}
 
 	return nil
-}
-
-func ExportResults(out io.Writer, ref string, result *benchmarkResult) error {
-	type Result struct {
-		Ref       string           `json:"ref"`
-		Benchmark *benchmarkResult `json:"benchmark"`
-	}
-
-	return json.NewEncoder(out).Encode(Result{
-		Ref:       ref,
-		Benchmark: result,
-	})
 }
 
 type resultKey struct {
