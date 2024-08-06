@@ -324,8 +324,8 @@ func (b *bench) addResult(source benchSource, res *benchmarkResult) {
 		res  *profileResult
 	}{
 		"cpu":           {"ns", &res.CPU},
-		"alloc_space":   {"", &res.AllocSpace},
-		"alloc_objects": {"bytes", &res.AllocObjects},
+		"alloc_space":   {"bytes", &res.AllocSpace},
+		"alloc_objects": {"", &res.AllocObjects},
 	}
 
 	addValue := func(xres *report.BenchmarkResult, xprof *profileResult) {
