@@ -8,7 +8,7 @@ import (
 )
 
 func TestGithubCommentTemplate(t *testing.T) {
-	tmpl, err := template.New("github").Parse(githubTemplate)
+	tmpl, err := template.New("github").Parse(reportTemplate)
 	require.NoError(t, err)
 
 	gh := &gitHubComment{

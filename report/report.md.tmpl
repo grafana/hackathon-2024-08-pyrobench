@@ -1,0 +1,18 @@
+{{- $global := . -}}
+### Benchmark Report
+
+{{ if .Finished }}__Finished__{{ else }}__In progress__{{ end }}
+
+{{.Report.BaseRef}} -> {{.Report.HeadRef}} ([compare](https://github.com/{{ .GitHubOwner }}/{{ .GitHubRepo }}/compare/{{.Report.BaseRef}}...{{.Report.HeadRef}}))
+
+{{- range .Report.Runs }}
+<details>
+<summary><tt>{{.Name}}</tt></summary>
+
+| Resource | Base | Head | Diff % |
+|----------|-----:|-----:|-------:|
+{{- range .Results }}
+| {{.Name}} | {{.BaseMarkdown}} | {{.HeadMarkdown}} | {{.DiffMarkdown}} |
+{{- end }}
+</details>
+{{- end }}

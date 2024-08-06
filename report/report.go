@@ -182,7 +182,7 @@ func newGitHubComment(logger log.Logger, params *Args, ch <-chan *BenchmarkRepor
 		return newNoopReporter(ch), nil
 	}
 
-	tmpl, err := template.New("github").Parse(githubTemplate)
+	tmpl, err := template.New("github").Parse(reportTemplate)
 	if err != nil {
 		return nil, err
 	}
@@ -207,26 +207,6 @@ func newGitHubComment(logger log.Logger, params *Args, ch <-chan *BenchmarkRepor
 
 	return gh, nil
 }
-
-var githubTemplate = `{{- $global := . -}}
-### Benchmark Report
-
-{{ if .Finished }}__Finished__{{ else }}__In progress__{{ end }}
-
-{{.Report.BaseRef}} -> {{.Report.HeadRef}} ([compare](https://github.com/{{ .GitHubOwner }}/{{ .GitHubRepo }}/compare/{{.Report.BaseRef}}...{{.Report.HeadRef}}))
-
-{{- range .Report.Runs }}
-<details>
-<summary><tt>{{.Name}}</tt></summary>
-
-| Resource | Base | Head | Diff % |
-|----------|-----:|-----:|-------:|
-{{- range .Results }}
-| {{.Name}} | {{.BaseMarkdown}} | {{.HeadMarkdown}} | {{.DiffMarkdown}} |
-{{- end }}
-</details>
-{{- end }}
-`
 
 func (gh *gitHubComment) render(report *BenchmarkReport) string {
 	buf := &strings.Builder{}
