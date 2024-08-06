@@ -13,6 +13,8 @@ func TestGithubCommentTemplate(t *testing.T) {
 
 	gh := &gitHubComment{
 		template: tmpl,
+		owner:    "my-org",
+		repo:     "my-repo",
 	}
 
 	for _, tc := range []struct {
@@ -38,7 +40,7 @@ func TestGithubCommentTemplate(t *testing.T) {
 
 __In progress__
 
-abcd -> ef00
+abcd -> ef00 ([compare](https://github.com/my-org/my-repo/compare/abcd...ef00))
 <details>
 <summary><tt>pkg1.BenchTestA</tt></summary>
 
@@ -85,7 +87,7 @@ abcd -> ef00
 
 __In progress__
 
-abcd -> ef00
+abcd -> ef00 ([compare](https://github.com/my-org/my-repo/compare/abcd...ef00))
 <details>
 <summary><tt>pkg1.BenchTestA</tt></summary>
 

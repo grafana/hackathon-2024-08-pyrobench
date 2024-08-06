@@ -213,7 +213,7 @@ var githubTemplate = `{{- $global := . -}}
 
 {{ if .Finished }}__Finished__{{ else }}__In progress__{{ end }}
 
-{{.Report.BaseRef}} -> {{.Report.HeadRef}}
+{{.Report.BaseRef}} -> {{.Report.HeadRef}} ([compare](https://github.com/{{ .GitHubOwner }}/{{ .GitHubRepo }}/compare/{{.Report.BaseRef}}...{{.Report.HeadRef}}))
 
 {{- range .Report.Runs }}
 <details>
@@ -231,11 +231,15 @@ var githubTemplate = `{{- $global := . -}}
 func (gh *gitHubComment) render(report *BenchmarkReport) string {
 	buf := &strings.Builder{}
 	if err := gh.template.Execute(buf, struct {
-		Report   *BenchmarkReport
-		Finished bool
+		Report      *BenchmarkReport
+		Finished    bool
+		GitHubOwner string
+		GitHubRepo  string
 	}{
-		Report:   report,
-		Finished: gh.finished,
+		Report:      report,
+		Finished:    gh.finished,
+		GitHubOwner: gh.owner,
+		GitHubRepo:  gh.repo,
 	}); err != nil {
 		level.Warn(gh.logger).Log("msg", "failed to render template", "err", err)
 	}
