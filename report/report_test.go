@@ -65,8 +65,14 @@ abcd -> ef00
 							{
 								Name:      "cpu",
 								Unit:      "ns",
-								BaseValue: BenchmarkValue{100, "a-cpu-base"},
-								HeadValue: BenchmarkValue{200, "a-cpu-head"},
+								BaseValue: BenchmarkValue{10000000, "a-cpu-base"},
+								HeadValue: BenchmarkValue{20000000, "a-cpu-head"},
+							},
+							{
+								Name:      "alloc_space",
+								Unit:      "bytes",
+								BaseValue: BenchmarkValue{2048 * 1024, "a-alloc-base"},
+								HeadValue: BenchmarkValue{2047 * 1024, "a-alloc-head"},
 							},
 						},
 					},
@@ -85,7 +91,8 @@ abcd -> ef00
 
 | Resource | Base | Head | Diff % |
 |----------|-----:|-----:|-------:|
-| cpu | [100](https://flamegraph.com/share/a-cpu-base) | [200](https://flamegraph.com/share/a-cpu-head) | [100.00%](https://flamegraph.com/share/a-cpu-base/a-cpu-head) |
+| cpu | [10 ms](https://flamegraph.com/share/a-cpu-base) | [20 ms](https://flamegraph.com/share/a-cpu-head) | [100 %](https://flamegraph.com/share/a-cpu-base/a-cpu-head) |
+| alloc_space | [2.1 MB](https://flamegraph.com/share/a-alloc-base) | [2.1 MB](https://flamegraph.com/share/a-alloc-head) | [-0.04 %](https://flamegraph.com/share/a-alloc-base/a-alloc-head) |
 </details>
 <details>
 <summary><tt>pkg1.BenchTestB</tt></summary>

@@ -43,6 +43,9 @@ func (v *BenchmarkValue) markdown(unit string) string {
 	if unit == "bytes" {
 		n = humanize.Bytes(uint64(v.ProfileValue))
 	}
+	if unit == "ns" {
+		n = humanize.SI(float64(v.ProfileValue)/1e9, "s")
+	}
 	return fmt.Sprintf(
 		"[%s](%s/share/%s)",
 		n,
@@ -74,8 +77,8 @@ func (r *BenchmarkResult) DiffMarkdown() string {
 	diff := float64(r.HeadValue.ProfileValue-r.BaseValue.ProfileValue) / float64(r.BaseValue.ProfileValue) * 100
 
 	return fmt.Sprintf(
-		"[%.2f%%](%s/share/%s/%s)",
-		diff,
+		"[%s %%](%s/share/%s/%s)",
+		humanize.CommafWithDigits(diff, 2),
 		baseURL,
 		r.BaseValue.FlamegraphKey,
 		r.HeadValue.FlamegraphKey,

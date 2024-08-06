@@ -319,10 +319,13 @@ const (
 )
 
 func (b *bench) addResult(source benchSource, res *benchmarkResult) {
-	m := map[string]*profileResult{
-		"cpu":           &res.CPU,
-		"alloc_space":   &res.AllocSpace,
-		"alloc_objects": &res.AllocObjects,
+	m := map[string]struct {
+		unit string
+		res  *profileResult
+	}{
+		"cpu":           {"ns", &res.CPU},
+		"alloc_space":   {"", &res.AllocSpace},
+		"alloc_objects": {"bytes", &res.AllocObjects},
 	}
 
 	addValue := func(xres *report.BenchmarkResult, xprof *profileResult) {
@@ -347,11 +350,11 @@ func (b *bench) addResult(source benchSource, res *benchmarkResult) {
 			continue
 		}
 
-		if prof.Key == "" {
+		if prof.res.Key == "" {
 			continue
 		}
 
-		addValue(res, prof)
+		addValue(res, prof.res)
 
 		delete(m, res.Name)
 		// if not empty
@@ -361,8 +364,9 @@ func (b *bench) addResult(source benchSource, res *benchmarkResult) {
 	for name, prof := range m {
 		res := report.BenchmarkResult{
 			Name: name,
+			Unit: prof.unit,
 		}
-		addValue(&res, prof)
+		addValue(&res, prof.res)
 		b.results = append(b.results, res)
 	}
 
