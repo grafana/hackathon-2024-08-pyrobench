@@ -134,7 +134,7 @@ func newNoopReporter(ch <-chan *BenchmarkReport) Reporter {
 
 func New(logger log.Logger, params *Args, ch <-chan *BenchmarkReport) (Reporter, error) {
 	if params != nil && params.GitHubCommenter {
-		return newGithHubComment(logger, params, ch)
+		return newGitHubComment(logger, params, ch)
 	}
 
 	return newNoopReporter(ch), nil
@@ -157,7 +157,7 @@ func parseGitHubRef(ref string) (issueNumber int, ok bool) {
 	return issueNumber, true
 }
 
-func newGithHubComment(logger log.Logger, params *Args, ch <-chan *BenchmarkReport) (Reporter, error) {
+func newGitHubComment(logger log.Logger, params *Args, ch <-chan *BenchmarkReport) (Reporter, error) {
 	githubToken := os.Getenv("GITHUB_TOKEN")
 	if githubToken == "" {
 		return nil, errors.New("GITHUB_TOKEN is required for github comment reporter")
