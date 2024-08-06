@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 
@@ -16,6 +17,8 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/grafana/pyrobench/report"
 )
 
 type contextKey uint8
@@ -62,15 +65,17 @@ func cleanupFromContext(ctx context.Context) cleanupHookFunc {
 }
 
 type CompareArgs struct {
-	GitBase string
-
+	GitBase   string
 	BenchTime string
+	Report    *report.Params
 }
 
 func AddCompareCommand(app *kingpin.Application) (*kingpin.CmdClause, *CompareArgs) {
 	cmd := app.Command("compare", "Compare Golang Mirco Benchmarks using CPU/Memory profiles.")
-
-	args := CompareArgs{}
+	reportParams := report.AddParams(cmd)
+	args := CompareArgs{
+		Report: reportParams,
+	}
 	cmd.Flag("git-base", "Git base commit").Default("HEAD~1").StringVar(&args.GitBase)
 	cmd.Flag("bench-time", "Golang's benchtime argument.").Default("10s").StringVar(&args.BenchTime)
 	return cmd, &args
@@ -166,6 +171,14 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 		return fmt.Errorf("error checking prerequisites: %w", err)
 	}
 
+	// initialize reporter
+	updateCh := make(chan *report.BenchmarkReport)
+	reporter, err := report.New(b.logger, args.Report, updateCh)
+	if err != nil {
+		return fmt.Errorf("error initializing reporter: %w", err)
+	}
+	defer reporter.Stop()
+
 	// resolve base commit
 	b.baseCommit, err = b.gitRevParse(ctx, args.GitBase)
 	if err != nil {
@@ -228,47 +241,25 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 		return err
 	}
 
-	res := b.compareResult()
-	if len(res) == 0 {
+	benchmarks := b.compareResult()
+	if len(benchmarks) == 0 {
 		level.Info(b.logger).Log("msg", "no benchmarks to run")
 	}
-	for _, r := range res {
-		logFields := []interface{}{}
-		handleResult := func(name string, res *benchmarkResult) {
-			if res.CPU.Key != "" {
-				k := name + "_cpu"
-				logFields = append(logFields,
-					k, res.CPU.Key,
-					k+"_total", res.CPU.Total,
-				)
-			}
-			if res.AllocSpace.Key != "" {
-				k := name + "_alloc_space"
-				logFields = append(logFields,
-					k, res.AllocSpace.Key,
-					k+"_total", res.AllocSpace.Total,
-				)
-			}
-			if res.AllocObjects.Key != "" {
-				k := name + "_alloc_objects"
-				logFields = append(logFields,
-					k, res.AllocObjects.Key,
-					k+"_total", res.AllocObjects.Total,
-				)
-			}
-		}
 
+	updateCh <- b.generateReport(benchmarks)
+	for _, r := range benchmarks {
 		// TODO(bryan): This is the output stream. The github action will
 		// forward this to later steps in the job, ultimately using this info to
 		// build the report comment. We should make this configurable.
 		output := os.Stdout
 
 		if r.base != nil {
-			res, err := r.result.base.runBenchmark(ctx, args.BenchTime, r.key.benchmark)
+			res, err := r.bench.base.runBenchmark(ctx, args.BenchTime, r.key.benchmark)
 			if err != nil {
 				level.Error(b.logger).Log("msg", "error running benchmark", "package", r.base.meta.ImportPath, "benchmark", r.key.benchmark, "err", err)
 			}
-			handleResult("base", res)
+			r.addResult(benchSourceBase, res)
+			updateCh <- b.generateReport(benchmarks)
 			err = json.NewEncoder(output).Encode(BenchmarkResult{
 				Ref:       b.baseCommit,
 				Type:      "base",
@@ -280,11 +271,12 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 			}
 		}
 		if r.head != nil {
-			res, err := r.result.head.runBenchmark(ctx, args.BenchTime, r.key.benchmark)
+			res, err := r.bench.head.runBenchmark(ctx, args.BenchTime, r.key.benchmark)
 			if err != nil {
 				level.Error(b.logger).Log("msg", "error running benchmark", "package", r.base.meta.ImportPath, "benchmark", r.key.benchmark, "err", err)
 			}
-			handleResult("head", res)
+			r.addResult(benchSourceHead, res)
+			updateCh <- b.generateReport(benchmarks)
 			err = json.NewEncoder(output).Encode(BenchmarkResult{
 				Ref:       b.headCommit,
 				Type:      "head",
@@ -295,67 +287,135 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 				return err
 			}
 		}
-		level.Info(b.logger).Log(append([]interface{}{"msg", "benchmark results", "package", r.key.packagePath, "benchmark", r.key.benchmark}, logFields...)...)
 	}
 
 	return nil
 }
 
-type resultKey struct {
+type benchKey struct {
 	packagePath string
 	benchmark   string
 }
 
-type resultWithKey struct {
-	*result
-	key resultKey
+type benchWithKey struct {
+	*bench
+	key benchKey
 }
 
-type result struct {
+type bench struct {
 	base   *Package
 	head   *Package
 	reason string
+
+	results []report.BenchmarkResult
 }
 
-type benchReason uint8
+type benchSource uint8
 
 const (
-	benchReasonUnkown benchReason = iota
-	benchReasonCodeChange
-	benchReasonBaseMissing
-	benchReasonHeadMissing
+	benchSourceUnknown benchSource = iota
+	benchSourceHead
+	benchSourceBase
 )
 
-type resultMaps struct {
-	m       map[resultKey]int
-	results []result
+func (b *bench) addResult(source benchSource, res *benchmarkResult) {
+	m := map[string]*profileResult{
+		"cpu":           &res.CPU,
+		"alloc_space":   &res.AllocSpace,
+		"alloc_objects": &res.AllocObjects,
+	}
+
+	addValue := func(xres *report.BenchmarkResult, xprof *profileResult) {
+		v := report.BenchmarkValue{
+			ProfileValue:  xprof.Total,
+			FlamegraphKey: xprof.Key,
+		}
+		if source == benchSourceBase {
+			xres.BaseValue = v
+
+		} else if source == benchSourceHead {
+			xres.HeadValue = v
+		} else {
+			panic("unknown source")
+		}
+	}
+
+	for idx := range b.results {
+		res := &b.results[idx]
+		prof, ok := m[res.Name]
+		if !ok {
+			continue
+		}
+
+		if prof.Key == "" {
+			continue
+		}
+
+		addValue(res, prof)
+
+		delete(m, res.Name)
+		// if not empty
+
+	}
+
+	for name, prof := range m {
+		res := report.BenchmarkResult{
+			Name: name,
+		}
+		addValue(&res, prof)
+		b.results = append(b.results, res)
+	}
+
+	sort.Slice(b.results, func(i, j int) bool {
+		return b.results[i].Name == b.results[j].Name
+	})
 }
 
-func newResultMaps(len int) *resultMaps {
-	return &resultMaps{
-		m:       make(map[resultKey]int, len),
-		results: make([]result, 0, len),
+type benchMap struct {
+	m       map[benchKey]int
+	results []bench
+}
+
+func newBenchMap(len int) *benchMap {
+	return &benchMap{
+		m:       make(map[benchKey]int, len),
+		results: make([]bench, 0, len),
 	}
 }
 
-func (r *resultMaps) get(k resultKey) *result {
+func (r *benchMap) get(k benchKey) *bench {
 	idx, ok := r.m[k]
 	if !ok {
 		idx = len(r.results)
 		r.m[k] = idx
-		r.results = append(r.results, result{})
+		r.results = append(r.results, bench{})
 	}
 	return &r.results[idx]
 }
 
-func (b *Benchmark) compareResult() []resultWithKey {
-	r := newResultMaps(len(b.headPackages))
+func (b *Benchmark) generateReport(results []*benchWithKey) *report.BenchmarkReport {
+	r := &report.BenchmarkReport{
+		BaseRef: b.baseCommit,
+		HeadRef: b.headCommit,
+	}
+	r.Runs = make([]report.BenchmarkRun, 0, len(results))
+	for _, res := range results {
+		r.Runs = append(r.Runs, report.BenchmarkRun{
+			Name:    fmt.Sprintf("%s.%s", res.key.packagePath, res.key.benchmark),
+			Results: res.bench.results,
+		})
+	}
+	return r
+}
 
-	resultFromPackages(func(k resultKey, p *Package) {
+func (b *Benchmark) compareResult() []*benchWithKey {
+	r := newBenchMap(len(b.headPackages))
+
+	resultFromPackages(func(k benchKey, p *Package) {
 		x := r.get(k)
 		x.head = p
 	}, b.headPackages)
-	resultFromPackages(func(k resultKey, p *Package) {
+	resultFromPackages(func(k benchKey, p *Package) {
 		x := r.get(k)
 		x.base = p
 	}, b.basePackages)
@@ -364,12 +424,12 @@ func (b *Benchmark) compareResult() []resultWithKey {
 		return nil
 	}
 
-	keys := make([]resultKey, len(r.m))
+	keys := make([]benchKey, len(r.m))
 	for k, v := range r.m {
 		keys[v] = k
 	}
 
-	benchmarkToBeRun := make([]resultWithKey, 0, len(r.results))
+	benchmarkToBeRun := make([]*benchWithKey, 0, len(r.results))
 	for idx := range r.results {
 		res := &r.results[idx]
 		k := keys[idx]
@@ -391,9 +451,9 @@ func (b *Benchmark) compareResult() []resultWithKey {
 
 		benchmarkToBeRun = append(
 			benchmarkToBeRun,
-			resultWithKey{
-				key:    k,
-				result: res,
+			&benchWithKey{
+				key:   k,
+				bench: res,
 			},
 		)
 		level.Debug(b.logger).Log("msg", "benchmark will be run", "package", res.head.meta.ImportPath, "benchmark", k.benchmark, "reason", res.reason)
@@ -402,11 +462,11 @@ func (b *Benchmark) compareResult() []resultWithKey {
 	return benchmarkToBeRun
 }
 
-func resultFromPackages(f func(resultKey, *Package), pkgs []Package) {
+func resultFromPackages(f func(benchKey, *Package), pkgs []Package) {
 	for idx := range pkgs {
 		p := &pkgs[idx]
 		for _, b := range p.benchmarkNames {
-			f(resultKey{p.meta.ImportPath, b}, p)
+			f(benchKey{p.meta.ImportPath, b}, p)
 		}
 	}
 }
