@@ -67,12 +67,12 @@ func cleanupFromContext(ctx context.Context) cleanupHookFunc {
 type CompareArgs struct {
 	GitBase   string
 	BenchTime string
-	Report    *report.Params
+	Report    *report.Args
 }
 
 func AddCompareCommand(app *kingpin.Application) (*kingpin.CmdClause, *CompareArgs) {
 	cmd := app.Command("compare", "Compare Golang Mirco Benchmarks using CPU/Memory profiles.")
-	reportParams := report.AddParams(cmd)
+	reportParams := report.AddArgs(cmd)
 	args := CompareArgs{
 		Report: reportParams,
 	}

@@ -87,7 +87,7 @@ func (r *BenchmarkResult) DiffMarkdown() string {
 
 type gitHubComment struct {
 	logger log.Logger
-	params *Params
+	params *Args
 
 	owner, repo string
 	issueNumber int
@@ -101,13 +101,13 @@ type gitHubComment struct {
 	wg     sync.WaitGroup
 }
 
-type Params struct {
+type Args struct {
 	GitHubCommenter     bool
 	PercentageThreshold float64 // percentage of difference between the base and the value that will trigger a warning
 }
 
-func AddParams(cmd *kingpin.CmdClause) *Params {
-	args := &Params{}
+func AddArgs(cmd *kingpin.CmdClause) *Args {
+	args := &Args{}
 	cmd.Flag("github-commenter", "Enable reporting with github commenter").Default("false").BoolVar(&args.GitHubCommenter)
 	cmd.Flag("percentage-threshold", "Percentage of difference between the base and the value that will trigger a warning").Default("5").Float64Var(&args.PercentageThreshold)
 
@@ -132,7 +132,7 @@ func newNoopReporter(ch <-chan *BenchmarkReport) Reporter {
 	return &noopReporter{}
 }
 
-func New(logger log.Logger, params *Params, ch <-chan *BenchmarkReport) (Reporter, error) {
+func New(logger log.Logger, params *Args, ch <-chan *BenchmarkReport) (Reporter, error) {
 	if params != nil && params.GitHubCommenter {
 		return newGithHubComment(logger, params, ch)
 	}
@@ -157,7 +157,7 @@ func parseGitHubRef(ref string) (issueNumber int, ok bool) {
 	return issueNumber, true
 }
 
-func newGithHubComment(logger log.Logger, params *Params, ch <-chan *BenchmarkReport) (Reporter, error) {
+func newGithHubComment(logger log.Logger, params *Args, ch <-chan *BenchmarkReport) (Reporter, error) {
 	githubToken := os.Getenv("GITHUB_TOKEN")
 	if githubToken == "" {
 		return nil, errors.New("GITHUB_TOKEN is required for github comment reporter")
