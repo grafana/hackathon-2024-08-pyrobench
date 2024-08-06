@@ -94,7 +94,7 @@ abcd -> ef00 ([compare](https://github.com/my-org/my-repo/compare/abcd...ef00))
 | Resource | Base | Head | Diff % |
 |----------|-----:|-----:|-------:|
 | cpu | [10 ms](https://flamegraph.com/share/a-cpu-base) | [20 ms](https://flamegraph.com/share/a-cpu-head) | [100 %](https://flamegraph.com/share/a-cpu-base/a-cpu-head) |
-| alloc_space | [2.1 MB](https://flamegraph.com/share/a-alloc-base) | [2.1 MB](https://flamegraph.com/share/a-alloc-head) | [-0.04 %](https://flamegraph.com/share/a-alloc-base/a-alloc-head) |
+| alloc_space | [2.0 MiB](https://flamegraph.com/share/a-alloc-base) | [2.0 MiB](https://flamegraph.com/share/a-alloc-head) | [-0.04 %](https://flamegraph.com/share/a-alloc-base/a-alloc-head) |
 </details>
 <details>
 <summary><tt>pkg1.BenchTestB</tt></summary>

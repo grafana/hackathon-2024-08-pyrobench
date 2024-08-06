@@ -39,9 +39,9 @@ func (v *BenchmarkValue) markdown(unit string) string {
 	if v.FlamegraphKey == "" {
 		return "n/a"
 	}
-	n := humanize.Comma(v.ProfileValue)
+	n := humanize.SI(float64(v.ProfileValue), "")
 	if unit == "bytes" {
-		n = humanize.Bytes(uint64(v.ProfileValue))
+		n = humanize.IBytes(uint64(v.ProfileValue))
 	}
 	if unit == "ns" {
 		n = humanize.SI(float64(v.ProfileValue)/1e9, "s")
