@@ -2,6 +2,7 @@ package bench
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -11,10 +12,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/google/pprof/profile"
+	"golang.org/x/perf/benchfmt"
 )
 
 type Package struct {
@@ -96,7 +100,7 @@ func sumProfiles(p *profile.Profile, typeIdx int) int64 {
 	return sum
 }
 
-func (p *Package) runBenchmark(ctx context.Context, benchTime, benchName string) (*benchmarkResult, error) {
+func (p *Package) runBenchmark(ctx context.Context, args *CompareArgs, benchName string) (*benchmarkResult, error) {
 	pprofPath, err := os.MkdirTemp("", "pyrotest-pprof-out")
 	if err != nil {
 		return nil, err
@@ -109,19 +113,41 @@ func (p *Package) runBenchmark(ctx context.Context, benchTime, benchName string)
 	cmd := []string{
 		p.testBinary,
 		"-test.run", "^$",
-		"-test.benchtime", benchTime,
-		"-test.bench", benchName,
+		"-test.count", strconv.FormatUint(uint64(args.BenchCount), 10),
+		"-test.benchtime", args.BenchTime,
+		"-test.bench", regexp.QuoteMeta(benchName),
 		"-test.cpuprofile", cpuProfile,
 		"-test.memprofile", memProfile,
+		"-test.benchmem",
 	}
 	c := exec.CommandContext(ctx, cmd[0], cmd[1:]...)
 	c.Dir = p.meta.Dir
 
-	// TODO: Do something with the output
-	// TODO: Catch and display errors
-	_, err = c.Output()
+	bufOut := new(bytes.Buffer)
+	bufErr := new(bytes.Buffer)
+	c.Stdout = bufOut
+	c.Stderr = bufErr
+
+	err = c.Run()
 	if err != nil {
-		return nil, fmt.Errorf("failed to run benchmark %v: %w", cmd, err)
+		return nil, fmt.Errorf("failed to run benchmark %v stdErr=%s : %w", cmd, bufErr.String(), err)
+	}
+
+	benchReader := benchfmt.NewReader(bytes.NewReader(bufOut.Bytes()), "")
+	for benchReader.Scan() {
+		// TODO: Pass on the benchmark information to reporter
+		b := benchReader.Result()
+		result, ok := b.(*benchfmt.Result)
+		if !ok {
+			continue
+		}
+		fmt.Printf("XXX config=%+#v\n", result.Config)
+		for _, v := range result.Values {
+			fmt.Printf("XXX   value=%+#v\n", v)
+		}
+	}
+	if err := benchReader.Err(); err != nil {
+		return nil, fmt.Errorf("unable to parse benchmark output: %w", benchReader.Err())
 	}
 
 	result := benchmarkResult{

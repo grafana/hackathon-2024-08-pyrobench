@@ -9,10 +9,12 @@ require (
 	github.com/google/go-github/v63 v63.0.0
 	github.com/google/pprof v0.0.0-20240727154555-813a5fbdbec8
 	github.com/stretchr/testify v1.8.2
+	golang.org/x/perf v0.0.0-20240716160700-783bcb78a185
 	golang.org/x/sync v0.7.0
 )
 
 require (
+	github.com/aclements/go-moremath v0.0.0-20210112150236-f10218a38794 // indirect
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-logfmt/logfmt v0.5.1 // indirect

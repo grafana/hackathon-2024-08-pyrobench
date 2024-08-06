@@ -65,9 +65,10 @@ func cleanupFromContext(ctx context.Context) cleanupHookFunc {
 }
 
 type CompareArgs struct {
-	GitBase   string
-	BenchTime string
-	Report    *report.Args
+	GitBase    string
+	BenchTime  string
+	BenchCount uint16
+	Report     *report.Args
 }
 
 func AddCompareCommand(app *kingpin.Application) (*kingpin.CmdClause, *CompareArgs) {
@@ -77,7 +78,8 @@ func AddCompareCommand(app *kingpin.Application) (*kingpin.CmdClause, *CompareAr
 		Report: reportParams,
 	}
 	cmd.Flag("git-base", "Git base commit").Default("HEAD~1").StringVar(&args.GitBase)
-	cmd.Flag("bench-time", "Golang's benchtime argument.").Default("10s").StringVar(&args.BenchTime)
+	cmd.Flag("bench-time", "Golang's benchtime argument.").Default("2s").StringVar(&args.BenchTime)
+	cmd.Flag("bench-count", "Golang's count argument. How often to repeat the benchmarks").Default("5").Uint16Var(&args.BenchCount)
 	return cmd, &args
 }
 
@@ -254,7 +256,7 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 		output := os.Stdout
 
 		if r.base != nil {
-			res, err := r.bench.base.runBenchmark(ctx, args.BenchTime, r.key.benchmark)
+			res, err := r.bench.base.runBenchmark(ctx, args, r.key.benchmark)
 			if err != nil {
 				level.Error(b.logger).Log("msg", "error running benchmark", "package", r.base.meta.ImportPath, "benchmark", r.key.benchmark, "err", err)
 			}
@@ -271,7 +273,7 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 			}
 		}
 		if r.head != nil {
-			res, err := r.bench.head.runBenchmark(ctx, args.BenchTime, r.key.benchmark)
+			res, err := r.bench.head.runBenchmark(ctx, args, r.key.benchmark)
 			if err != nil {
 				level.Error(b.logger).Log("msg", "error running benchmark", "package", r.base.meta.ImportPath, "benchmark", r.key.benchmark, "err", err)
 			}

@@ -69,8 +69,9 @@ func TestBenchmarkE2E(t *testing.T) {
 		// run the benchmark
 		b := New(logger)
 		require.NoError(t, b.Compare(ctx, &CompareArgs{
-			GitBase:   "HEAD~1",
-			BenchTime: "1s",
+			GitBase:    "HEAD~1",
+			BenchTime:  "200ms",
+			BenchCount: 5,
 			Report: &report.Args{
 				GitHubCommenter: os.Getenv("PYROBENCH_GITHUB_REPORT") == "true",
 			},
