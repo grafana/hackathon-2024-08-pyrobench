@@ -134,7 +134,7 @@ func newNoopReporter(ch <-chan *BenchmarkReport) Reporter {
 
 func New(logger log.Logger, params *Args, ch <-chan *BenchmarkReport) (Reporter, error) {
 	if params != nil && params.GitHubCommenter {
-		return newGithHubComment(logger, params, ch)
+		return newGitHubComment(logger, params, ch)
 	}
 
 	return newNoopReporter(ch), nil
@@ -157,7 +157,7 @@ func parseGitHubRef(ref string) (issueNumber int, ok bool) {
 	return issueNumber, true
 }
 
-func newGithHubComment(logger log.Logger, params *Args, ch <-chan *BenchmarkReport) (Reporter, error) {
+func newGitHubComment(logger log.Logger, params *Args, ch <-chan *BenchmarkReport) (Reporter, error) {
 	githubToken := os.Getenv("GITHUB_TOKEN")
 	if githubToken == "" {
 		return nil, errors.New("GITHUB_TOKEN is required for github comment reporter")
@@ -182,7 +182,7 @@ func newGithHubComment(logger log.Logger, params *Args, ch <-chan *BenchmarkRepo
 		return newNoopReporter(ch), nil
 	}
 
-	tmpl, err := template.New("github").Parse(githubTemplate)
+	tmpl, err := template.New("github").Parse(reportTemplate)
 	if err != nil {
 		return nil, err
 	}
@@ -207,26 +207,6 @@ func newGithHubComment(logger log.Logger, params *Args, ch <-chan *BenchmarkRepo
 
 	return gh, nil
 }
-
-var githubTemplate = `{{- $global := . -}}
-### Benchmark Report
-
-{{ if .Finished }}__Finished__{{ else }}__In progress__{{ end }}
-
-{{.Report.BaseRef}} -> {{.Report.HeadRef}} ([compare](https://github.com/{{ .GitHubOwner }}/{{ .GitHubRepo }}/compare/{{.Report.BaseRef}}...{{.Report.HeadRef}}))
-
-{{- range .Report.Runs }}
-<details>
-<summary><tt>{{.Name}}</tt></summary>
-
-| Resource | Base | Head | Diff % |
-|----------|-----:|-----:|-------:|
-{{- range .Results }}
-| {{.Name}} | {{.BaseMarkdown}} | {{.HeadMarkdown}} | {{.DiffMarkdown}} |
-{{- end }}
-</details>
-{{- end }}
-`
 
 func (gh *gitHubComment) render(report *BenchmarkReport) string {
 	buf := &strings.Builder{}

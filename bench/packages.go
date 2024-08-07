@@ -90,6 +90,8 @@ type benchmarkResult struct {
 	AllocObjects profileResult
 	AllocSpace   profileResult
 	CPU          profileResult
+
+	RawOutput string
 }
 
 func sumProfiles(p *profile.Profile, typeIdx int) int64 {
@@ -150,9 +152,11 @@ func (p *Package) runBenchmark(ctx context.Context, args *CompareArgs, benchName
 		return nil, fmt.Errorf("unable to parse benchmark output: %w", benchReader.Err())
 	}
 
+	fmt.Println("BRYAN raw output =", bufOut.String()) // DEBUG
 	result := benchmarkResult{
 		ImportPath: p.meta.ImportPath,
 		Name:       benchName,
+		RawOutput:  bufOut.String(),
 	}
 
 	for _, profPath := range []string{cpuProfile, memProfile} {
