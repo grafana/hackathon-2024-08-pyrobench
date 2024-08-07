@@ -3,7 +3,6 @@ package bench
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -264,11 +263,6 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 
 	updateCh <- b.generateReport(benchmarks)
 	for _, r := range benchmarks {
-		// TODO(bryan): This is the output stream. The github action will
-		// forward this to later steps in the job, ultimately using this info to
-		// build the report comment. We should make this configurable.
-		output := os.Stdout
-
 		if r.base != nil {
 			res, err := r.bench.base.runBenchmark(ctx, args, r.key.benchmark)
 			if err != nil {
@@ -276,15 +270,6 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 			}
 			r.addResult(benchSourceBase, res)
 			updateCh <- b.generateReport(benchmarks)
-			err = json.NewEncoder(output).Encode(BenchmarkResult{
-				Ref:       b.baseCommit,
-				Type:      "base",
-				Benchmark: res,
-			})
-			if err != nil {
-				level.Error(b.logger).Log("msg", "error encoding baseline benchmark result", "err", err)
-				return err
-			}
 		}
 		if r.head != nil {
 			res, err := r.bench.head.runBenchmark(ctx, args, r.key.benchmark)
@@ -293,15 +278,6 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 			}
 			r.addResult(benchSourceHead, res)
 			updateCh <- b.generateReport(benchmarks)
-			err = json.NewEncoder(output).Encode(BenchmarkResult{
-				Ref:       b.headCommit,
-				Type:      "head",
-				Benchmark: res,
-			})
-			if err != nil {
-				level.Error(b.logger).Log("msg", "error head encoding benchmark result", "err", err)
-				return err
-			}
 		}
 	}
 
