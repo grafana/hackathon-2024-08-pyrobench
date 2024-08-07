@@ -16,8 +16,10 @@ import (
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"golang.org/x/perf/benchproc"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/grafana/pyrobench/benchtab"
 	"github.com/grafana/pyrobench/report"
 )
 
@@ -92,6 +94,9 @@ type Benchmark struct {
 	headDir      string
 	headCommit   string
 	headPackages []Package
+
+	statBuilder *benchtab.Builder
+	statFilter  *benchproc.Filter
 }
 
 type BenchmarkResult struct {
@@ -100,10 +105,18 @@ type BenchmarkResult struct {
 	Benchmark *benchmarkResult `json:"benchmark"`
 }
 
-func New(logger log.Logger) *Benchmark {
-	return &Benchmark{
-		logger: logger,
+func New(logger log.Logger) (*Benchmark, error) {
+	stat, filter, err := benchtab.NewDefaultBuilder()
+	if err != nil {
+		return nil, err
 	}
+
+	b := &Benchmark{
+		logger:      logger,
+		statBuilder: stat,
+		statFilter:  filter,
+	}
+	return b, nil
 }
 
 func (b *Benchmark) prerequisites(_ context.Context) error {

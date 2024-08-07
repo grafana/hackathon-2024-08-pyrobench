@@ -33,7 +33,10 @@ func checkError(err error) int {
 
 func main() {
 	ctx := context.Background()
-	b := bench.New(logger)
+	b, err := bench.New(logger)
+	if err != nil {
+		os.Exit(checkError(err))
+	}
 
 	app := kingpin.New(filepath.Base(os.Args[0]), "Compare Golang Mirco Benchmarks using CPU/Memory profiles.").UsageWriter(consoleOutput)
 	app.Flag("verbose", "Enable verbose logging.").Short('v').Default("0").BoolVar(&cfg.verbose)
