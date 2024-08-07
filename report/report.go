@@ -1,6 +1,7 @@
 package report
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -15,14 +16,16 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/google/go-github/v63/github"
+	"github.com/grafana/pyrobench/benchtab"
 )
 
 const baseURL = "https://flamegraph.com"
 
 type BenchmarkReport struct {
-	BaseRef string
-	HeadRef string
-	Runs    []BenchmarkRun
+	BaseRef         string
+	HeadRef         string
+	Runs            []BenchmarkRun
+	BenchStatTables *benchtab.Tables
 }
 
 type BenchmarkRun struct {
@@ -118,18 +121,31 @@ type Reporter interface {
 	Stop() error
 }
 
-type noopReporter struct{}
+type noopReporter struct {
+	wg sync.WaitGroup
+}
 
-func (_ noopReporter) Stop() error { return nil }
+func (r *noopReporter) Stop() error {
+	r.wg.Wait()
+	return nil
+}
 
 func newNoopReporter(ch <-chan *BenchmarkReport) Reporter {
+	r := &noopReporter{}
+
 	if ch != nil {
+		r.wg.Add(1)
+
 		go func() {
-			for range ch {
+			var last *BenchmarkReport
+			for last = range ch {
 			}
+
+			last.BenchStatTables.ToText(os.Stdout, false)
+			r.wg.Done()
 		}()
 	}
-	return &noopReporter{}
+	return r
 }
 
 func New(logger log.Logger, params *Args, ch <-chan *BenchmarkReport) (Reporter, error) {
@@ -209,17 +225,31 @@ func newGitHubComment(logger log.Logger, params *Args, ch <-chan *BenchmarkRepor
 }
 
 func (gh *gitHubComment) render(report *BenchmarkReport) string {
+	benchstatSummary := ""
+	if report.BenchStatTables != nil {
+		buf := new(bytes.Buffer)
+		report.BenchStatTables.ToText(buf, false)
+
+		var sb strings.Builder
+		sb.WriteString("```\n")
+		sb.WriteString(buf.String())
+		sb.WriteString("\n```")
+		benchstatSummary = sb.String()
+	}
+
 	buf := &strings.Builder{}
 	if err := gh.template.Execute(buf, struct {
 		Report      *BenchmarkReport
 		Finished    bool
 		GitHubOwner string
 		GitHubRepo  string
+		BenchStat   string
 	}{
 		Report:      report,
 		Finished:    gh.finished,
 		GitHubOwner: gh.owner,
 		GitHubRepo:  gh.repo,
+		BenchStat:   benchstatSummary,
 	}); err != nil {
 		level.Warn(gh.logger).Log("msg", "failed to render template", "err", err)
 	}
@@ -264,6 +294,7 @@ func (gh *gitHubComment) run(ctx context.Context) {
 			level.Warn(gh.logger).Log("msg", "failed to post comment", "err", err)
 		}
 	}()
+
 	for {
 		select {
 		case <-gh.stopCh:

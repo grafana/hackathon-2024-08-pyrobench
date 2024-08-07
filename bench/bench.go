@@ -290,7 +290,7 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 		return nil
 	}
 
-	updateCh <- b.generateReport(benchmarks)
+	updateCh <- b.generateReport(benchmarks, nil)
 	for _, r := range benchmarks {
 		if r.base != nil {
 			res, err := r.bench.base.runBenchmark(ctx, args, r.key.benchmark)
@@ -300,7 +300,7 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 
 			b.addBenchStatResults(res.RawResult, res.Units, benchSourceBase)
 			r.addResult(benchSourceBase, res)
-			updateCh <- b.generateReport(benchmarks)
+			updateCh <- b.generateReport(benchmarks, nil)
 		}
 		if r.head != nil {
 			res, err := r.bench.head.runBenchmark(ctx, args, r.key.benchmark)
@@ -310,13 +310,14 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 
 			b.addBenchStatResults(res.RawResult, res.Units, benchSourceHead)
 			r.addResult(benchSourceHead, res)
-			updateCh <- b.generateReport(benchmarks)
+			updateCh <- b.generateReport(benchmarks, nil)
 		}
 	}
 
 	tables := b.benchStatTable()
-	tables.ToText(os.Stdout, false)
+	updateCh <- b.generateReport(benchmarks, tables)
 
+	close(updateCh)
 	return nil
 }
 
@@ -436,11 +437,14 @@ func (r *benchMap) get(k benchKey) *bench {
 	return &r.results[idx]
 }
 
-func (b *Benchmark) generateReport(results []*benchWithKey) *report.BenchmarkReport {
+// note(bryan): Only pass tables on the last call to generateReport.
+func (b *Benchmark) generateReport(results []*benchWithKey, tables *benchtab.Tables) *report.BenchmarkReport {
 	r := &report.BenchmarkReport{
-		BaseRef: b.baseCommit,
-		HeadRef: b.headCommit,
+		BaseRef:         b.baseCommit,
+		HeadRef:         b.headCommit,
+		BenchStatTables: tables,
 	}
+
 	r.Runs = make([]report.BenchmarkRun, 0, len(results))
 	for _, res := range results {
 		r.Runs = append(r.Runs, report.BenchmarkRun{
