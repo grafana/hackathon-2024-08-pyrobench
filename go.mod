@@ -3,6 +3,7 @@ module github.com/grafana/pyrobench
 go 1.22.5
 
 require (
+	github.com/aclements/go-moremath v0.0.0-20210112150236-f10218a38794
 	github.com/alecthomas/kingpin/v2 v2.4.0
 	github.com/dustin/go-humanize v1.0.1
 	github.com/go-kit/log v0.2.1
@@ -14,7 +15,6 @@ require (
 )
 
 require (
-	github.com/aclements/go-moremath v0.0.0-20210112150236-f10218a38794 // indirect
 	github.com/alecthomas/units v0.0.0-20211218093645-b94a6e3cc137 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/go-logfmt/logfmt v0.5.1 // indirect
