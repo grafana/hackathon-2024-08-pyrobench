@@ -10,8 +10,8 @@ import (
 
 func NewDefaultBuilder() (*Builder, *benchproc.Filter, error) {
 	const defaultTable = ".config"
-	const defaultRow = ".fullname"
-	const defaultCol = ".file"
+	const defaultRow = "name"
+	const defaultCol = "source"
 	const defaultFilter = "*"
 
 	filter, err := benchproc.NewFilter(defaultFilter)

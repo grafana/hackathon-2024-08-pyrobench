@@ -91,7 +91,8 @@ type benchmarkResult struct {
 	AllocSpace   profileResult
 	CPU          profileResult
 
-	RawOutput string
+	RawResult []*benchfmt.Result
+	Units     benchfmt.UnitMetadataMap
 }
 
 func sumProfiles(p *profile.Profile, typeIdx int) int64 {
@@ -135,6 +136,7 @@ func (p *Package) runBenchmark(ctx context.Context, args *CompareArgs, benchName
 		return nil, fmt.Errorf("failed to run benchmark %v stdErr=%s : %w", cmd, bufErr.String(), err)
 	}
 
+	results := []*benchfmt.Result{}
 	benchReader := benchfmt.NewReader(bytes.NewReader(bufOut.Bytes()), "")
 	for benchReader.Scan() {
 		// TODO: Pass on the benchmark information to reporter
@@ -143,20 +145,19 @@ func (p *Package) runBenchmark(ctx context.Context, args *CompareArgs, benchName
 		if !ok {
 			continue
 		}
-		fmt.Printf("XXX config=%+#v\n", result.Config)
-		for _, v := range result.Values {
-			fmt.Printf("XXX   value=%+#v\n", v)
-		}
+
+		result.SetConfig("name", benchName)
+		results = append(results, result.Clone())
 	}
 	if err := benchReader.Err(); err != nil {
 		return nil, fmt.Errorf("unable to parse benchmark output: %w", benchReader.Err())
 	}
 
-	fmt.Println("BRYAN raw output =", bufOut.String()) // DEBUG
 	result := benchmarkResult{
 		ImportPath: p.meta.ImportPath,
 		Name:       benchName,
-		RawOutput:  bufOut.String(),
+		RawResult:  results,
+		Units:      benchReader.Units(),
 	}
 
 	for _, profPath := range []string{cpuProfile, memProfile} {

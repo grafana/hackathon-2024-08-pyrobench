@@ -15,6 +15,8 @@ import (
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"golang.org/x/perf/benchfmt"
+	"golang.org/x/perf/benchmath"
 	"golang.org/x/perf/benchproc"
 	"golang.org/x/sync/errgroup"
 
@@ -96,6 +98,7 @@ type Benchmark struct {
 
 	statBuilder *benchtab.Builder
 	statFilter  *benchproc.Filter
+	statUnits   benchfmt.UnitMetadataMap
 }
 
 type BenchmarkResult struct {
@@ -130,13 +133,39 @@ func (b *Benchmark) prerequisites(_ context.Context) error {
 		}(),
 	)
 }
+
 func (b *Benchmark) gitRevParse(ctx context.Context, rev string) (string, error) {
 	c, err := exec.CommandContext(ctx, "git", "rev-parse", rev).Output()
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(string(c)), nil
+}
 
+func (b *Benchmark) addBenchStatResults(results []*benchfmt.Result, units benchfmt.UnitMetadataMap, src benchSource) {
+	if b.statUnits == nil {
+		b.statUnits = units
+	}
+
+	for _, r := range results {
+		ok, err := b.statFilter.Apply(r)
+		if !ok && err != nil {
+			// Non-fatal error, let's just skip this result.
+			level.Error(b.logger).Log("msg", "error applying filter", "err", err)
+			continue
+		}
+
+		r.SetConfig("source", src.String())
+		b.statBuilder.Add(r)
+	}
+}
+
+func (b *Benchmark) benchStatTable() *benchtab.Tables {
+	return b.statBuilder.ToTables(benchtab.TableOpts{
+		Confidence: 0.95,
+		Thresholds: &benchmath.DefaultThresholds,
+		Units:      b.statUnits,
+	})
 }
 
 func (b *Benchmark) gitCheckoutBase(ctx context.Context) error {
@@ -269,6 +298,7 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 				level.Error(b.logger).Log("msg", "error running benchmark", "package", r.base.meta.ImportPath, "benchmark", r.key.benchmark, "err", err)
 			}
 
+			b.addBenchStatResults(res.RawResult, res.Units, benchSourceBase)
 			r.addResult(benchSourceBase, res)
 			updateCh <- b.generateReport(benchmarks)
 		}
@@ -278,10 +308,14 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 				level.Error(b.logger).Log("msg", "error running benchmark", "package", r.base.meta.ImportPath, "benchmark", r.key.benchmark, "err", err)
 			}
 
+			b.addBenchStatResults(res.RawResult, res.Units, benchSourceHead)
 			r.addResult(benchSourceHead, res)
 			updateCh <- b.generateReport(benchmarks)
 		}
 	}
+
+	tables := b.benchStatTable()
+	tables.ToText(os.Stdout, false)
 
 	return nil
 }
@@ -311,6 +345,17 @@ const (
 	benchSourceHead
 	benchSourceBase
 )
+
+func (b benchSource) String() string {
+	switch b {
+	case benchSourceBase:
+		return "base"
+	case benchSourceHead:
+		return "head"
+	default:
+		return "unknown"
+	}
+}
 
 func (b *bench) addResult(source benchSource, res *benchmarkResult) {
 	m := map[string]struct {
