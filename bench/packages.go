@@ -146,8 +146,9 @@ func (p *Package) runBenchmark(ctx context.Context, args *CompareArgs, benchName
 			continue
 		}
 
-		result.SetConfig("name", benchName)
-		results = append(results, result.Clone())
+		result2 := result.Clone()
+		result2.SetConfig("name", benchName)
+		results = append(results, result2)
 	}
 	if err := benchReader.Err(); err != nil {
 		return nil, fmt.Errorf("unable to parse benchmark output: %w", benchReader.Err())
