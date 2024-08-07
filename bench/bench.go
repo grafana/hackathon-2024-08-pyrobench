@@ -268,6 +268,7 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 			if err != nil {
 				level.Error(b.logger).Log("msg", "error running benchmark", "package", r.base.meta.ImportPath, "benchmark", r.key.benchmark, "err", err)
 			}
+
 			r.addResult(benchSourceBase, res)
 			updateCh <- b.generateReport(benchmarks)
 		}
@@ -276,6 +277,7 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 			if err != nil {
 				level.Error(b.logger).Log("msg", "error running benchmark", "package", r.base.meta.ImportPath, "benchmark", r.key.benchmark, "err", err)
 			}
+
 			r.addResult(benchSourceHead, res)
 			updateCh <- b.generateReport(benchmarks)
 		}
