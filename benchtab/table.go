@@ -14,7 +14,7 @@ import (
 	"golang.org/x/perf/benchproc"
 	"golang.org/x/perf/benchunit"
 
-	"github.com/grafana/pyrobench/internal/texttab"
+	"github.com/grafana/pyrobench/texttab"
 )
 
 // A Table summarizes and compares benchmark results in a 2D grid.
