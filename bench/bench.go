@@ -246,6 +246,7 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 	benchmarks := b.compareResult()
 	if len(benchmarks) == 0 {
 		level.Info(b.logger).Log("msg", "no benchmarks to run")
+		return nil
 	}
 
 	updateCh <- b.generateReport(benchmarks)
