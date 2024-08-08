@@ -122,11 +122,9 @@ type Reporter interface {
 }
 
 type noopReporter struct {
-	wg sync.WaitGroup
 }
 
 func (r *noopReporter) Stop() error {
-	r.wg.Wait()
 	return nil
 }
 
@@ -134,15 +132,9 @@ func newNoopReporter(ch <-chan *BenchmarkReport) Reporter {
 	r := &noopReporter{}
 
 	if ch != nil {
-		r.wg.Add(1)
-
 		go func() {
-			var last *BenchmarkReport
-			for last = range ch {
+			for range ch {
 			}
-
-			last.BenchStatTables.ToText(os.Stdout, false)
-			r.wg.Done()
 		}()
 	}
 	return r

@@ -96,9 +96,7 @@ type Benchmark struct {
 	headCommit   string
 	headPackages []Package
 
-	statBuilder *benchtab.Builder
-	statFilter  *benchproc.Filter
-	statUnits   benchfmt.UnitMetadataMap
+	statBuilders map[string]*StatBuilder
 }
 
 type BenchmarkResult struct {
@@ -108,15 +106,9 @@ type BenchmarkResult struct {
 }
 
 func New(logger log.Logger) (*Benchmark, error) {
-	stat, filter, err := benchtab.NewDefaultBuilder()
-	if err != nil {
-		return nil, err
-	}
-
 	b := &Benchmark{
-		logger:      logger,
-		statBuilder: stat,
-		statFilter:  filter,
+		logger:       logger,
+		statBuilders: make(map[string]*StatBuilder),
 	}
 	return b, nil
 }
@@ -142,13 +134,24 @@ func (b *Benchmark) gitRevParse(ctx context.Context, rev string) (string, error)
 	return strings.TrimSpace(string(c)), nil
 }
 
-func (b *Benchmark) addBenchStatResults(results []*benchfmt.Result, units benchfmt.UnitMetadataMap, src benchSource) {
-	if b.statUnits == nil {
-		b.statUnits = units
+func (b *Benchmark) addBenchStatResults(res *benchmarkResult, src benchSource) {
+	builder, ok := b.statBuilders[res.Name]
+	if !ok {
+		var err error
+		builder, err = NewStatBuilder()
+		if err != nil {
+			level.Error(b.logger).Log("msg", "error creating stat builder", "err", err)
+			return
+		}
+		b.statBuilders[res.Name] = builder
 	}
 
-	for _, r := range results {
-		ok, err := b.statFilter.Apply(r)
+	if builder.Units == nil {
+		builder.Units = res.Units
+	}
+
+	for _, r := range res.RawResult {
+		ok, err := builder.Filter.Apply(r)
 		if !ok && err != nil {
 			// Non-fatal error, let's just skip this result.
 			level.Error(b.logger).Log("msg", "error applying filter", "err", err)
@@ -156,16 +159,8 @@ func (b *Benchmark) addBenchStatResults(results []*benchfmt.Result, units benchf
 		}
 
 		r.SetConfig("source", src.String())
-		b.statBuilder.Add(r)
+		builder.Stats.Add(r)
 	}
-}
-
-func (b *Benchmark) benchStatTable() *benchtab.Tables {
-	return b.statBuilder.ToTables(benchtab.TableOpts{
-		Confidence: 0.95,
-		Thresholds: &benchmath.DefaultThresholds,
-		Units:      b.statUnits,
-	})
 }
 
 func (b *Benchmark) gitCheckoutBase(ctx context.Context) error {
@@ -298,7 +293,7 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 				level.Error(b.logger).Log("msg", "error running benchmark", "package", r.base.meta.ImportPath, "benchmark", r.key.benchmark, "err", err)
 			}
 
-			b.addBenchStatResults(res.RawResult, res.Units, benchSourceBase)
+			b.addBenchStatResults(res, benchSourceBase)
 			r.addResult(benchSourceBase, res)
 			updateCh <- b.generateReport(benchmarks, nil)
 		}
@@ -308,14 +303,16 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
 				level.Error(b.logger).Log("msg", "error running benchmark", "package", r.base.meta.ImportPath, "benchmark", r.key.benchmark, "err", err)
 			}
 
-			b.addBenchStatResults(res.RawResult, res.Units, benchSourceHead)
+			b.addBenchStatResults(res, benchSourceHead)
 			r.addResult(benchSourceHead, res)
 			updateCh <- b.generateReport(benchmarks, nil)
 		}
 	}
 
-	tables := b.benchStatTable()
-	updateCh <- b.generateReport(benchmarks, tables)
+	for _, builder := range b.statBuilders {
+		tables := builder.ToTables()
+		updateCh <- b.generateReport(benchmarks, tables)
+	}
 
 	close(updateCh)
 	return nil
@@ -516,4 +513,31 @@ func resultFromPackages(f func(benchKey, *Package), pkgs []Package) {
 			f(benchKey{p.meta.ImportPath, b}, p)
 		}
 	}
+}
+
+type StatBuilder struct {
+	Stats  *benchtab.Builder
+	Filter *benchproc.Filter
+	Units  benchfmt.UnitMetadataMap
+}
+
+func (sb *StatBuilder) ToTables() *benchtab.Tables {
+	return sb.Stats.ToTables(benchtab.TableOpts{
+		Confidence: 0.95,
+		Thresholds: &benchmath.DefaultThresholds,
+		Units:      sb.Units,
+	})
+}
+
+func NewStatBuilder() (*StatBuilder, error) {
+	stat, filter, err := benchtab.NewDefaultBuilder()
+	if err != nil {
+		return nil, err
+	}
+
+	sb := &StatBuilder{
+		Stats:  stat,
+		Filter: filter,
+	}
+	return sb, nil
 }
