@@ -119,12 +119,18 @@ func (b *Benchmark) compareWithReporter(ctx context.Context, args *CompareArgs, 
 		for idx := range pkgs {
 			p := &pkgs[idx]
 			g.Go(func() error {
-				err := p.compileTest(gctx)
-				if err != nil {
+
+				// list benchmarks first
+				if err := p.listBenchmarksAst(gctx, filter); err != nil {
 					return err
 				}
 
-				return p.listBenchmarks(gctx)
+				// exit early when no benchmarks
+				if len(p.benchmarkNames) == 0 {
+					return nil
+				}
+
+				return p.compileTest(gctx)
 			})
 		}
 	}
