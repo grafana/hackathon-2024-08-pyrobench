@@ -7,19 +7,9 @@ inputs:
   version:
     description: The version of pyrobench to use
     default: "latest"
-  go_version:
-    description: The golang version passedthrough to setup-go
-    default: "1.22"
 runs:
   using: composite
-  if: ${{ github.event.issue.pull_request }}
   steps:
-  - run:
-      - name: Set up Go 1.22
-        uses: actions/setup-go@v5
-        with:
-          go-version: 1.22
-        id: go
   - run: |
       set -e
 
