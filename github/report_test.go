@@ -1,9 +1,10 @@
-package report
+package github
 
 import (
 	"html/template"
 	"testing"
 
+	"github.com/grafana/pyrobench/report"
 	"github.com/stretchr/testify/require"
 )
 
@@ -13,21 +14,23 @@ func TestGithubCommentTemplate(t *testing.T) {
 
 	gh := &gitHubComment{
 		template: tmpl,
-		owner:    "my-org",
-		repo:     "my-repo",
+		githubCommon: githubCommon{
+			owner: "my-org",
+			repo:  "my-repo",
+		},
 	}
 
 	for _, tc := range []struct {
 		Name     string
-		R        *BenchmarkReport
+		R        *report.BenchmarkReport
 		expected string
 	}{
 		{
 			Name: "benchmark about to run",
-			R: &BenchmarkReport{
+			R: &report.BenchmarkReport{
 				BaseRef: "abcd",
 				HeadRef: "ef00",
-				Runs: []BenchmarkRun{
+				Runs: []report.BenchmarkRun{
 					{
 						Name: "pkg1.BenchTestA",
 					},
@@ -57,24 +60,24 @@ abcd -> ef00 ([compare](https://github.com/my-org/my-repo/compare/abcd...ef00))
 		},
 		{
 			Name: "benchmark one finished to run",
-			R: &BenchmarkReport{
+			R: &report.BenchmarkReport{
 				BaseRef: "abcd",
 				HeadRef: "ef00",
-				Runs: []BenchmarkRun{
+				Runs: []report.BenchmarkRun{
 					{
 						Name: "pkg1.BenchTestA",
-						Results: []BenchmarkResult{
+						Results: []report.BenchmarkResult{
 							{
 								Name:      "cpu",
 								Unit:      "ns",
-								BaseValue: BenchmarkValue{10000000, "a-cpu-base"},
-								HeadValue: BenchmarkValue{20000000, "a-cpu-head"},
+								BaseValue: report.BenchmarkValue{10000000, "a-cpu-base"},
+								HeadValue: report.BenchmarkValue{20000000, "a-cpu-head"},
 							},
 							{
 								Name:      "alloc_space",
 								Unit:      "bytes",
-								BaseValue: BenchmarkValue{2048 * 1024, "a-alloc-base"},
-								HeadValue: BenchmarkValue{2047 * 1024, "a-alloc-head"},
+								BaseValue: report.BenchmarkValue{2048 * 1024, "a-alloc-base"},
+								HeadValue: report.BenchmarkValue{2047 * 1024, "a-alloc-head"},
 							},
 						},
 					},

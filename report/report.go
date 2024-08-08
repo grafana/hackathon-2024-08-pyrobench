@@ -1,20 +1,13 @@
 package report
 
 import (
-	"bytes"
-	"context"
-	"errors"
 	"fmt"
 	"html/template"
-	"os"
-	"strconv"
-	"strings"
 	"sync"
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/dustin/go-humanize"
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/google/go-github/v63/github"
 	"github.com/grafana/pyrobench/benchtab"
 )
@@ -113,7 +106,6 @@ func AddArgs(cmd *kingpin.CmdClause) *Args {
 	args := &Args{}
 	cmd.Flag("github-commenter", "Enable reporting with github commenter").Default("false").BoolVar(&args.GitHubCommenter)
 	cmd.Flag("percentage-threshold", "Percentage of difference between the base and the value that will trigger a warning").Default("5").Float64Var(&args.PercentageThreshold)
-
 	return args
 }
 
@@ -128,186 +120,12 @@ func (r *noopReporter) Stop() error {
 	return nil
 }
 
-func newNoopReporter(ch <-chan *BenchmarkReport) Reporter {
-	r := &noopReporter{}
-
+func NewNoop(ch <-chan *BenchmarkReport) Reporter {
 	if ch != nil {
 		go func() {
 			for range ch {
 			}
 		}()
 	}
-	return r
-}
-
-func New(logger log.Logger, params *Args, ch <-chan *BenchmarkReport) (Reporter, error) {
-	if params != nil && params.GitHubCommenter {
-		return newGitHubComment(logger, params, ch)
-	}
-
-	return newNoopReporter(ch), nil
-}
-
-func parseGitHubRef(ref string) (issueNumber int, ok bool) {
-	prefix := "refs/pull/"
-	if !strings.HasPrefix(ref, prefix) {
-		return 0, false
-	}
-	suffix := "/merge"
-	if !strings.HasSuffix(ref, "/merge") {
-		return 0, false
-	}
-
-	issueNumber, err := strconv.Atoi(ref[len(prefix) : len(ref)-len(suffix)])
-	if err != nil {
-		return 0, false
-	}
-	return issueNumber, true
-}
-
-func newGitHubComment(logger log.Logger, params *Args, ch <-chan *BenchmarkReport) (Reporter, error) {
-	githubToken := os.Getenv("GITHUB_TOKEN")
-	if githubToken == "" {
-		return nil, errors.New("GITHUB_TOKEN is required for github comment reporter")
-	}
-
-	githubRepository := os.Getenv("GITHUB_REPOSITORY")
-	if githubRepository == "" {
-		return nil, errors.New("GITHUB_REPOSITORY is required for github comment reporter")
-	}
-	parts := strings.SplitN(githubRepository, "/", 2)
-	if len(parts) != 2 {
-		return nil, errors.New("GITHUB_REPOSITORY must be in the format owner/repo")
-	}
-
-	githubRef := os.Getenv("GITHUB_REF")
-	if githubRef == "" {
-		return nil, errors.New("GITHUB_REF is required for github comment reporter")
-	}
-	githubIssue, ok := parseGitHubRef(githubRef)
-	if !ok {
-		level.Warn(logger).Log("msg", "GITHUB_REF must be a pull request ref for a github comment to be active", "ref", githubRef)
-		return newNoopReporter(ch), nil
-	}
-
-	tmpl, err := template.New("github").Parse(reportTemplate)
-	if err != nil {
-		return nil, err
-	}
-
-	gh := &gitHubComment{
-		logger:      log.With(logger, "module", "github-commenter"),
-		ch:          ch,
-		owner:       parts[0],
-		repo:        parts[1],
-		issueNumber: githubIssue,
-		stopCh:      make(chan struct{}),
-		client:      github.NewClient(nil).WithAuthToken(githubToken),
-		params:      params,
-		template:    tmpl,
-	}
-
-	gh.wg.Add(1)
-	go func() {
-		defer gh.wg.Done()
-		gh.run(context.Background())
-	}()
-
-	return gh, nil
-}
-
-func (gh *gitHubComment) render(report *BenchmarkReport) string {
-	benchstatSummary := ""
-	if report.BenchStatTables != nil {
-		buf := new(bytes.Buffer)
-		report.BenchStatTables.ToText(buf, false)
-
-		var sb strings.Builder
-		sb.WriteString("```\n")
-		sb.WriteString(buf.String())
-		sb.WriteString("\n```")
-		benchstatSummary = sb.String()
-	}
-
-	buf := &strings.Builder{}
-	if err := gh.template.Execute(buf, struct {
-		Report      *BenchmarkReport
-		Finished    bool
-		GitHubOwner string
-		GitHubRepo  string
-		BenchStat   string
-	}{
-		Report:      report,
-		Finished:    gh.finished,
-		GitHubOwner: gh.owner,
-		GitHubRepo:  gh.repo,
-		BenchStat:   benchstatSummary,
-	}); err != nil {
-		level.Warn(gh.logger).Log("msg", "failed to render template", "err", err)
-	}
-	return buf.String()
-}
-
-func (gh *gitHubComment) postComment(ctx context.Context, body string) error {
-	if gh.commentID != 0 {
-		// update an existing comment
-		_, _, err := gh.client.Issues.EditComment(
-			ctx,
-			gh.owner,
-			gh.repo,
-			gh.commentID,
-			&github.IssueComment{
-				Body: &body,
-			},
-		)
-		return err
-	}
-
-	resp, _, err := gh.client.Issues.CreateComment(
-		ctx,
-		gh.owner,
-		gh.repo,
-		gh.issueNumber,
-		&github.IssueComment{
-			Body: &body,
-		},
-	)
-	gh.commentID = resp.GetID()
-	return err
-
-}
-
-func (gh *gitHubComment) run(ctx context.Context) {
-	var lastReport *BenchmarkReport
-	defer func() {
-		gh.finished = true
-		body := gh.render(lastReport)
-		if err := gh.postComment(ctx, body); err != nil {
-			level.Warn(gh.logger).Log("msg", "failed to post comment", "err", err)
-		}
-	}()
-
-	for {
-		select {
-		case <-gh.stopCh:
-			// finalize something
-			return
-		case report := <-gh.ch:
-			body := gh.render(report)
-			if err := gh.postComment(ctx, body); err != nil {
-				level.Warn(gh.logger).Log("msg", "failed to post comment", "err", err)
-			}
-			lastReport = report
-		}
-	}
-}
-
-func (gh *gitHubComment) Stop() error {
-	close(gh.stopCh)
-	gh.wg.Wait()
-	return nil
-}
-
-func main() {
-	fmt.Println("vim-go")
+	return &noopReporter{}
 }

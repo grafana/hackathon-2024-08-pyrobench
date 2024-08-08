@@ -1,59 +1,40 @@
 package github
 
 import (
-	"bufio"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
-	"os"
-	"slices"
-	"strconv"
+	"html/template"
 	"strings"
+	"sync"
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/google/go-github/v63/github"
-
 	"github.com/grafana/pyrobench/report"
 )
 
-type CommentHookArgs struct {
-	AllowedAssociations []string
-	BotName             string
-	Report              *report.Args
+type Args struct {
+	Token   string
+	Context string
 }
 
-func AddCommentHook(app *kingpin.Application) (*kingpin.CmdClause, *CommentHookArgs) {
-	cmd := app.Command("github-comment-hook", "Use this in a Github comment workflow to add benchmarks to your repo.")
-	reportParams := report.AddArgs(cmd)
-	args := &CommentHookArgs{
-		Report: reportParams,
+func addArgs(cmd *kingpin.CmdClause, required bool) *Args {
+	f := func(f *kingpin.FlagClause) *kingpin.FlagClause {
+		if required {
+			return f.Required()
+		}
+		return f
 	}
-	cmd.Flag("allowed-associations", "Allowed associations for the comment hook.").Default("collaborator", "contributor", "member", "owner").StringsVar(&args.AllowedAssociations)
-	cmd.Flag("bot-name", "What is my name?").Default("@pyrobench").StringVar(&args.BotName)
-	return cmd, args
+	args := &Args{}
+	f(cmd.Flag("github-context", "Github context to use for the comment hook.").Envar("GITHUB_CONTEXT")).StringVar(&args.Context)
+	f(cmd.Flag("github-token", "Github token for API use.").Envar("GITHUB_TOKEN")).StringVar(&args.Token)
+	return args
 }
 
-func CommentHook(ctx context.Context, logger log.Logger, args *CommentHookArgs) error {
-	ghContext := os.Getenv("GITHUB_CONTEXT")
-	if ghContext == "" {
-		return errors.New("GITHUB_CONTEXT is required for github comment hook")
-	}
-	ghToken := os.Getenv("GITHUB_TOKEN")
-	if ghToken == "" {
-		return errors.New("GITHUB_TOKEN is required for github comment hook")
-	}
+func AddRequiredArgs(cmd *kingpin.CmdClause) *Args { return addArgs(cmd, true) }
 
-	var ghCtx githubContext
-	if err := json.Unmarshal([]byte(ghContext), &ghCtx); err != nil {
-		return fmt.Errorf("failed to unmarshal GITHUB_CONTEXT: %w", err)
-	}
-
-	return commentHook(ctx, logger, args, &ghCtx, ghToken)
-}
+func AddArgs(cmd *kingpin.CmdClause) *Args { return addArgs(cmd, false) }
 
 type githubContext struct {
 	Repository string `json:"repository"`
@@ -63,6 +44,7 @@ type githubContext struct {
 		Comment struct {
 			ID                int64  `json:"id"`
 			AuthorAssociation string `json:"author_association"`
+			Body              string `json:"body"`
 		} `json:"comment"`
 		Issue struct {
 			Number      int `json:"number"`
@@ -73,96 +55,58 @@ type githubContext struct {
 	} `json:"event"`
 }
 
-type BenchmarkArg struct {
-	Regex string
-	Time  *string
-	Count *int
+type githubCommon struct {
+	body  string
+	pr    int
+	owner string
+	repo  string
+
+	client *github.Client
 }
 
-func parseCommandLine(args *CommentHookArgs, r io.Reader) ([]*BenchmarkArg, error) {
-	var result []*BenchmarkArg
-
-	// go through string line by line
-	scanner := bufio.NewScanner(r)
-	for scanner.Scan() {
-		// find my name
-		pos := strings.Index(scanner.Text(), args.BotName)
-		if pos < 0 {
-			continue
-		}
-
-		var current *BenchmarkArg
-		for _, field := range strings.Fields(scanner.Text()[pos+len(args.BotName):]) {
-			pos := strings.Index(field, "=")
-			if pos < 0 {
-				// new regex
-				if current != nil {
-					result = append(result, current)
-				}
-				current = &BenchmarkArg{Regex: field}
-			}
-
-			if p := "count="; strings.HasPrefix(field, p) {
-				count, err := strconv.Atoi(field[len(p):])
-				if err != nil {
-					return nil, fmt.Errorf("failed to parse count: %w", err)
-				}
-				current.Count = &count
-			}
-
-			if p := "time="; strings.HasPrefix(field, p) {
-				s := strings.Clone(field[len(p):])
-				current.Time = &s
-			}
-		}
-		if current != nil {
-			result = append(result, current)
-		}
+func newGitHubCommon(args *Args) (*githubCommon, *githubContext, error) {
+	if args.Token == "" {
+		return nil, nil, errors.New("GITHUB_TOKEN is required")
 	}
-	switch err := scanner.Err(); err {
-	case nil:
-		return result, nil
-	default:
-		return nil, fmt.Errorf("failed to read input: %w", err)
+
+	if args.Token == "" {
+		return nil, nil, errors.New("GITHUB_CONTEXT is required")
 	}
+
+	var ghContext githubContext
+	if err := json.Unmarshal([]byte(args.Context), &ghContext); err != nil {
+		return nil, nil, fmt.Errorf("failed to unmarshal github context: %w", err)
+	}
+
+	if ghContext.Event.Issue.PullRequest.URL == "" {
+		return nil, nil, fmt.Errorf("issue is not a pull request")
+	}
+
+	parts := strings.SplitN(ghContext.Repository, "/", 2)
+	if len(parts) != 2 {
+		return nil, nil, fmt.Errorf("invalid repository: %s", ghContext.Repository)
+	}
+
+	return &githubCommon{
+		pr:     ghContext.Event.Issue.Number,
+		owner:  parts[0],
+		repo:   parts[1],
+		client: github.NewClient(nil).WithAuthToken(args.Token),
+	}, &ghContext, nil
 }
 
-func commentHook(ctx context.Context, logger log.Logger, args *CommentHookArgs, ghContext *githubContext, ghToken string) error {
-	if exp := "issue_comment"; ghContext.EventName != exp {
-		return fmt.Errorf("unsupported event_name in github context: %s, expected %s", ghContext.EventName, exp)
-	}
+type gitHubComment struct {
+	githubCommon
+	logger log.Logger
 
-	if ghContext.Event.Action != "created" {
-		return fmt.Errorf("unsupported action in github context: %s", ghContext.Event.Action)
-	}
+	ch       <-chan *report.BenchmarkReport
+	stopCh   chan struct{}
+	wg       sync.WaitGroup
+	template *template.Template
 
-	if !slices.Contains(args.AllowedAssociations, strings.ToLower(ghContext.Event.Comment.AuthorAssociation)) {
-		return fmt.Errorf("author association %s is not allowed, allowed are %s", ghContext.Event.Comment.AuthorAssociation, strings.Join(args.AllowedAssociations, ", "))
-	}
+	commentID int64 // this is a unique identifier for the comment
 
-	// parse the body to see if we need to get active
-	benchmarks, err := parseCommandLine(args, os.Stdin)
-	if err != nil {
-		return fmt.Errorf("failed to parse command line: %w", err)
-	}
-	if len(benchmarks) == 0 {
-		// nothing to do
-		return nil
-	}
-	level.Info(logger).Log("msg", "running benchmarks", "repo", ghContext.Repository, "pr", ghContext.Event.Issue.Number, "benchmarks", fmt.Sprintf("%+#v", benchmarks))
+	GitHubCommenter bool
 
-	gh := github.NewClient(nil).WithAuthToken(ghToken)
-	orgRepo := strings.SplitN(ghContext.Repository, "/", 2)
-	pr, _, err := gh.PullRequests.Get(ctx, orgRepo[0], orgRepo[1], ghContext.Event.Issue.Number)
-	if err != nil {
-		return fmt.Errorf("failed to get pull request: %w", err)
-	}
-	pr.GetBase()
-
-	level.Info(logger).Log("msg", "running benchmarks", "repo", ghContext.Repository, "pr", ghContext.Event.Issue.Number, "base", pr.GetBase().GetRef(), "head", pr.GetHead().GetRef())
-
-	// TODO: Clone the repo and checkout base and head and run benchmark
-
-	return nil
-
+	finished bool
 }

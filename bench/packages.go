@@ -103,7 +103,7 @@ func sumProfiles(p *profile.Profile, typeIdx int) int64 {
 	return sum
 }
 
-func (p *Package) runBenchmark(ctx context.Context, args *CompareArgs, benchName string) (*benchmarkResult, error) {
+func (p *Package) runBenchmark(ctx context.Context, benchTime string, benchCount uint16, benchName string) (*benchmarkResult, error) {
 	pprofPath, err := os.MkdirTemp("", "pyrotest-pprof-out")
 	if err != nil {
 		return nil, err
@@ -116,8 +116,8 @@ func (p *Package) runBenchmark(ctx context.Context, args *CompareArgs, benchName
 	cmd := []string{
 		p.testBinary,
 		"-test.run", "^$",
-		"-test.count", strconv.FormatUint(uint64(args.BenchCount), 10),
-		"-test.benchtime", args.BenchTime,
+		"-test.count", strconv.FormatUint(uint64(benchCount), 10),
+		"-test.benchtime", benchTime,
 		"-test.bench", regexp.QuoteMeta(benchName),
 		"-test.cpuprofile", cpuProfile,
 		"-test.memprofile", memProfile,

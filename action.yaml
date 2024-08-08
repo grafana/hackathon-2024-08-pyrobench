@@ -1,0 +1,39 @@
+name: Pyrobench
+description: Generates benchmark reports including CPU/mem profiles for Go microbenchmarks on demand
+inputs:
+  github_token:
+    description: GitHub token with access to comment on the related PR.
+    required: true
+  github_context:
+    description: GitHub context with details about the comment.
+    required: true
+  version:
+    description: The version of pyrobench to use
+    default: "latest"
+runs:
+  using: composite
+  steps:
+  - run: |
+      set -e
+
+      URL_PREFIX="http://github.com/grafana/pyrobench/releases/"
+      PYROBENCH_VERSION=${PYROBENCH_VERSION:-latest}
+
+      # if version is dev run straight from main
+      if [ "${PYROBENCH_VERSION}" == "dev" ]; then
+        exec go run github.com/grafana/pyrobench@main -v github-comment-hook --github-commenter
+      fi
+
+      # if version is latest detect the latest release
+      PYROBENCH_VERSION=$(basename $(curl -Ls -o /dev/null -w %{url_effective} ${URL_PREFIX}/latest))
+
+      # Download the action from the store
+      curl --fail -Lo /tmp/pyrobench "${URL_PREFIX}download/${PYROBENCH_VERSION}/pyrobench_$(go env GOOS)_$(go env GOARCH)"
+      chmod +x /tmp/pyrobench
+
+      exec /tmp/pyrobench -v github-comment-hook --github-commenter
+    shell: bash
+    env:
+      PYROBENCH_VERSION: ${{inputs.version}}
+      GITHUB_TOKEN: ${{inputs.github_token}}
+      GITHUB_CONTEXT: ${{inputs.github_context}}
