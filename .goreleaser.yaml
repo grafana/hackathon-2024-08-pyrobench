@@ -1,0 +1,40 @@
+project_name: pyrobench
+version: 2
+builds:
+  - env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goarm:
+      - "7"
+    mod_timestamp: "{{ .CommitTimestamp }}"
+    flags:
+      - -trimpath
+    tags:
+      - netgo
+    id: pyrobench
+archives:
+  - id: pyrobench
+    builds:
+      - pyrobench
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    format: binary
+
+checksum:
+  name_template: "checksums.txt"
+snapshot:
+  name_template: "{{ incpatch .Version }}-next"
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^test:"
+release:
+  draft: true
+
+  ids:
+    - pyrobench
