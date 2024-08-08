@@ -4,6 +4,9 @@ inputs:
   github_token:
     description: GitHub token with access to comment on the related PR.
     required: true
+  github_context:
+    description: GitHub context with details about the comment.
+    required: true
   version:
     description: The version of pyrobench to use
     default: "latest"
@@ -33,4 +36,4 @@ runs:
     env:
       PYROBENCH_VERSION: ${{inputs.version}}
       GITHUB_TOKEN: ${{inputs.github_token}}
-      GITHUB_CONTEXT: ${{ toJson(github) }}
+      GITHUB_CONTEXT: ${{inputs.github_context}}
