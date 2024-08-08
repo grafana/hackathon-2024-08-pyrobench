@@ -440,7 +440,7 @@ func resultFromPackages(f func(benchKey, *Package), pkgs []Package) {
 	for idx := range pkgs {
 		p := &pkgs[idx]
 		for _, b := range p.benchmarkNames {
-			f(benchKey{p.meta.ImportPath, b}, p)
+			f(benchKey{p.meta.ImportPath, b.Name}, p)
 		}
 	}
 }

@@ -8,6 +8,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"io"
 	"os"
 	"os/exec"
@@ -28,7 +31,12 @@ type Package struct {
 
 	testBinary     string
 	testBinaryHash []byte
-	benchmarkNames []string
+	benchmarkNames []benchmarkMeta
+}
+
+type benchmarkMeta struct {
+	Name     string
+	position *token.Position
 }
 
 type packageMeta struct {
@@ -68,13 +76,81 @@ func (p *Package) listBenchmarks(ctx context.Context) error {
 
 	scanner := bufio.NewScanner(out)
 	for scanner.Scan() {
-		p.benchmarkNames = append(p.benchmarkNames, scanner.Text())
+		p.benchmarkNames = append(p.benchmarkNames, benchmarkMeta{Name: scanner.Text()})
 	}
 	if err := scanner.Err(); err != nil {
 		return err
 	}
 
 	return c.Wait()
+}
+
+func isBenchmarkNode(n ast.Node) (*ast.FuncDecl, bool) {
+
+	m, ok := n.(*ast.FuncDecl)
+	if ok {
+		if len(m.Type.Params.List) == 1 {
+
+			if ok {
+
+				star, ok := m.Type.Params.List[0].Type.(*ast.StarExpr)
+				if ok {
+					sel, ok := star.X.(*ast.SelectorExpr)
+					if ok {
+						if sel.Sel.Name == "B" && sel.X.(*ast.Ident).Name == "testing" {
+							return m, true
+						}
+					}
+				}
+			}
+		}
+	}
+
+	return nil, false
+}
+
+func (p *Package) listBenchmarksAst(_ context.Context, filters []*BenchmarkFilter) error {
+	if p.hasNoTests() {
+		return nil
+	}
+
+	//Create a FileSet to work with
+	fset := token.NewFileSet()
+	//Parse the file and create an AST
+
+	for _, fileName := range p.meta.TestGoFiles {
+		file, err := parser.ParseFile(fset, filepath.Join(p.meta.Dir, fileName), nil, parser.ParseComments)
+		if err != nil {
+			return err
+		}
+
+		ast.Inspect(file, func(n ast.Node) bool {
+			m, ok := isBenchmarkNode(n)
+			if ok {
+				keep := false
+				if len(filters) > 0 {
+					keep = false
+					for _, filter := range filters {
+						if filter.Filter.MatchString(m.Name.Name) {
+							keep = true
+							break
+						}
+					}
+				}
+
+				if keep {
+					position := fset.Position(m.Pos())
+					p.benchmarkNames = append(p.benchmarkNames, benchmarkMeta{
+						Name:     m.Name.Name,
+						position: &position,
+					})
+				}
+			}
+			return true
+		})
+	}
+
+	return nil
 }
 
 type profileResult struct {
