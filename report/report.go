@@ -38,26 +38,21 @@ func (v *BenchmarkValue) markdown(unit string) string {
 	}
 
 	var val string
-	var suffix string
 	switch unit {
 	case "ns":
 		val = humanize.SI(float64(v.ProfileValue)/1e9, "s")
-		suffix = "sec/op"
 	case "bytes":
 		val = humanize.IBytes(uint64(v.ProfileValue))
-		suffix = "B/op"
 	case "":
 		val = humanize.SI(float64(v.ProfileValue), "")
-		suffix = "allocs/op"
 	}
 	val = strings.TrimSpace(val)
 
 	return fmt.Sprintf(
-		"[%s](%s/share/%s) (%s)",
+		"[%s](%s/share/%s)",
 		val,
 		baseURL,
 		v.FlamegraphKey,
-		suffix,
 	)
 }
 

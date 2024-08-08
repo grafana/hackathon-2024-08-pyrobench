@@ -313,13 +313,16 @@ func (b *Benchmark) generateReport(benchmarkGroups [][]*benchWithKey, tables *be
 	for _, results := range benchmarkGroups {
 		for _, res := range results {
 			for i, r := range res.bench.results {
+
 				switch r.Unit {
 				case "ns":
-					table := getTableForUnit(tables, "sec/op")
+					const unit = "sec/op"
+					table := getTableForUnit(tables, unit)
 					if table == nil {
 						continue
 					}
 
+					res.bench.results[i].Name = fmt.Sprintf("%s (%s)", r.Name, unit)
 					for _, col := range table.Cols {
 						switch col.String() {
 						case "source:base":
@@ -333,11 +336,13 @@ func (b *Benchmark) generateReport(benchmarkGroups [][]*benchWithKey, tables *be
 					// use benchstat's diff value instead of calculating our
 					// own.
 				case "bytes":
+					const unit = "B/op"
 					table := getTableForUnit(tables, "B/op")
 					if table == nil {
 						continue
 					}
 
+					res.bench.results[i].Name = fmt.Sprintf("%s (%s)", r.Name, unit)
 					for _, col := range table.Cols {
 						switch col.String() {
 						case "source:base":
@@ -347,11 +352,13 @@ func (b *Benchmark) generateReport(benchmarkGroups [][]*benchWithKey, tables *be
 						}
 					}
 				case "": // allocs
-					table := getTableForUnit(tables, "allocs/op")
+					const unit = "allocs/op"
+					table := getTableForUnit(tables, unit)
 					if table == nil {
 						continue
 					}
 
+					res.bench.results[i].Name = fmt.Sprintf("%s (%s)", r.Name, unit)
 					for _, col := range table.Cols {
 						switch col.String() {
 						case "source:base":
