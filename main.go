@@ -11,7 +11,6 @@ import (
 	"github.com/go-kit/log/level"
 
 	"github.com/grafana/pyrobench/bench"
-	"github.com/grafana/pyrobench/github"
 )
 
 var (
@@ -40,7 +39,7 @@ func main() {
 
 	compareCmd, compareArgs := bench.AddCompareCommand(app)
 
-	gitHubCommentHookCmd, githubCommentHookArgs := github.AddCommentHook(app)
+	gitHubCommentHookCmd, githubCommentHookArgs := bench.AddGitHubCommentHookCommand(app)
 
 	// parse command line arguments
 	parsedCmd := kingpin.MustParse(app.Parse(os.Args[1:]))
@@ -56,11 +55,11 @@ func main() {
 			os.Exit(checkError(err))
 		}
 	case gitHubCommentHookCmd.FullCommand():
-		if err := github.CommentHook(ctx, logger, githubCommentHookArgs); err != nil {
+		if err := b.GitHubCommentHook(ctx, githubCommentHookArgs); err != nil {
 			os.Exit(checkError(err))
 		}
 	default:
-		level.Error(logger).Log("msg", "unknown command", "cmd", parsedCmd)
+		_ = level.Error(logger).Log("msg", "unknown command", "cmd", parsedCmd)
 	}
 
 }

@@ -3,20 +3,16 @@ package bench
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 
-	"github.com/alecthomas/kingpin/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/pyrobench/report"
 )
@@ -64,25 +60,6 @@ func cleanupFromContext(ctx context.Context) cleanupHookFunc {
 	return cleanup
 }
 
-type CompareArgs struct {
-	GitBase    string
-	BenchTime  string
-	BenchCount uint16
-	Report     *report.Args
-}
-
-func AddCompareCommand(app *kingpin.Application) (*kingpin.CmdClause, *CompareArgs) {
-	cmd := app.Command("compare", "Compare Golang Mirco Benchmarks using CPU/Memory profiles.")
-	reportParams := report.AddArgs(cmd)
-	args := CompareArgs{
-		Report: reportParams,
-	}
-	cmd.Flag("git-base", "Git base commit").Default("HEAD~1").StringVar(&args.GitBase)
-	cmd.Flag("bench-time", "Golang's benchtime argument.").Default("2s").StringVar(&args.BenchTime)
-	cmd.Flag("bench-count", "Golang's count argument. How often to repeat the benchmarks").Default("5").Uint16Var(&args.BenchCount)
-	return cmd, &args
-}
-
 type Benchmark struct {
 	logger log.Logger
 
@@ -127,6 +104,21 @@ func (b *Benchmark) gitRevParse(ctx context.Context, rev string) (string, error)
 
 }
 
+func git(args ...string) ([]byte, error) {
+	bufOut := new(bytes.Buffer)
+	bufErr := new(bytes.Buffer)
+	cmd := append([]string{"git"}, args...)
+	c := exec.Command(cmd[0], cmd[1:]...)
+	c.Stdout = bufOut
+	c.Stderr = bufErr
+
+	err := c.Run()
+	if err != nil {
+		return nil, fmt.Errorf("command %v: %w\n%s", cmd, err, bufErr.String())
+	}
+	return bufOut.Bytes(), nil
+}
+
 func (b *Benchmark) gitCheckoutBase(ctx context.Context) error {
 	dir, err := os.MkdirTemp("", "pyrobench-base")
 	if err != nil {
@@ -156,143 +148,6 @@ func countPackagesWithTests(packages []Package) int {
 		}
 	}
 	return count
-}
-
-func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs) error {
-	cleaner := &cleaner{}
-	ctx = addCleanupToContext(ctx, cleaner.add)
-	defer func() {
-		err := cleaner.cleanup()
-		if err != nil {
-			level.Error(b.logger).Log("msg", "error cleaning up", "err", err)
-		}
-	}()
-
-	err := b.prerequisites(ctx)
-	if err != nil {
-		return fmt.Errorf("error checking prerequisites: %w", err)
-	}
-
-	// initialize reporter
-	updateCh := make(chan *report.BenchmarkReport)
-	reporter, err := report.New(b.logger, args.Report, updateCh)
-	if err != nil {
-		return fmt.Errorf("error initializing reporter: %w", err)
-	}
-	defer reporter.Stop()
-
-	// resolve base commit
-	b.baseCommit, err = b.gitRevParse(ctx, args.GitBase)
-	if err != nil {
-		return fmt.Errorf("error resolving base git rev: %w", err)
-	}
-	b.headCommit, err = b.gitRevParse(ctx, "HEAD")
-	if err != nil {
-		return fmt.Errorf("error resolving head git rev: %w", err)
-	}
-	level.Info(b.logger).Log("msg", "comparing commits", "base", b.baseCommit, "head", b.headCommit)
-
-	// get working directory
-	dir, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("error getting working directory: %w", err)
-	}
-	b.headDir, err = filepath.Abs(dir)
-	if err != nil {
-		return fmt.Errorf("error getting absolute path of working directory: %w", err)
-	}
-
-	// checkout base commit
-	err = b.gitCheckoutBase(ctx)
-	if err != nil {
-		return fmt.Errorf("error checking out base commit %s: %w", b.baseCommit, err)
-	}
-
-	headPackages, err := discoverPackages(ctx, b.logger, b.headDir)
-	if err != nil {
-		return fmt.Errorf("error discovering packages in head: %w", err)
-	}
-	b.headPackages = headPackages
-
-	basePackages, err := discoverPackages(ctx, b.logger, b.baseDir)
-	if err != nil {
-		return fmt.Errorf("error discovering packages in head: %w", err)
-	}
-	b.basePackages = basePackages
-
-	g, gctx := errgroup.WithContext(ctx)
-	g.SetLimit(4)
-
-	level.Info(b.logger).Log("msg", "compiling packages with tests to figure out what changed", "base", countPackagesWithTests(basePackages), "head", countPackagesWithTests(headPackages))
-	for _, pkgs := range [][]Package{b.basePackages, b.headPackages} {
-		for idx := range pkgs {
-			p := &pkgs[idx]
-			g.Go(func() error {
-				err := p.compileTest(gctx)
-				if err != nil {
-					return err
-				}
-
-				return p.listBenchmarks(gctx)
-			})
-		}
-	}
-
-	err = g.Wait()
-	if err != nil {
-		return err
-	}
-
-	benchmarks := b.compareResult()
-	if len(benchmarks) == 0 {
-		level.Info(b.logger).Log("msg", "no benchmarks to run")
-		return nil
-	}
-
-	updateCh <- b.generateReport(benchmarks)
-	for _, r := range benchmarks {
-		// TODO(bryan): This is the output stream. The github action will
-		// forward this to later steps in the job, ultimately using this info to
-		// build the report comment. We should make this configurable.
-		output := os.Stdout
-
-		if r.base != nil {
-			res, err := r.bench.base.runBenchmark(ctx, args, r.key.benchmark)
-			if err != nil {
-				level.Error(b.logger).Log("msg", "error running benchmark", "package", r.base.meta.ImportPath, "benchmark", r.key.benchmark, "err", err)
-			}
-			r.addResult(benchSourceBase, res)
-			updateCh <- b.generateReport(benchmarks)
-			err = json.NewEncoder(output).Encode(BenchmarkResult{
-				Ref:       b.baseCommit,
-				Type:      "base",
-				Benchmark: res,
-			})
-			if err != nil {
-				level.Error(b.logger).Log("msg", "error encoding baseline benchmark result", "err", err)
-				return err
-			}
-		}
-		if r.head != nil {
-			res, err := r.bench.head.runBenchmark(ctx, args, r.key.benchmark)
-			if err != nil {
-				level.Error(b.logger).Log("msg", "error running benchmark", "package", r.base.meta.ImportPath, "benchmark", r.key.benchmark, "err", err)
-			}
-			r.addResult(benchSourceHead, res)
-			updateCh <- b.generateReport(benchmarks)
-			err = json.NewEncoder(output).Encode(BenchmarkResult{
-				Ref:       b.headCommit,
-				Type:      "head",
-				Benchmark: res,
-			})
-			if err != nil {
-				level.Error(b.logger).Log("msg", "error head encoding benchmark result", "err", err)
-				return err
-			}
-		}
-	}
-
-	return nil
 }
 
 type benchKey struct {
@@ -400,17 +255,18 @@ func (r *benchMap) get(k benchKey) *bench {
 	return &r.results[idx]
 }
 
-func (b *Benchmark) generateReport(results []*benchWithKey) *report.BenchmarkReport {
+func (b *Benchmark) generateReport(benchmarkGroups [][]*benchWithKey) *report.BenchmarkReport {
 	r := &report.BenchmarkReport{
 		BaseRef: b.baseCommit,
 		HeadRef: b.headCommit,
 	}
-	r.Runs = make([]report.BenchmarkRun, 0, len(results))
-	for _, res := range results {
-		r.Runs = append(r.Runs, report.BenchmarkRun{
-			Name:    fmt.Sprintf("%s.%s", res.key.packagePath, res.key.benchmark),
-			Results: res.bench.results,
-		})
+	for _, results := range benchmarkGroups {
+		for _, res := range results {
+			r.Runs = append(r.Runs, report.BenchmarkRun{
+				Name:    fmt.Sprintf("%s.%s", res.key.packagePath, res.key.benchmark),
+				Results: res.bench.results,
+			})
+		}
 	}
 	return r
 }

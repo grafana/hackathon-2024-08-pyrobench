@@ -1,4 +1,4 @@
-package report
+package github
 
 import _ "embed"
 
