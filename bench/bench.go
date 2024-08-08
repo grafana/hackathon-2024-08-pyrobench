@@ -319,7 +319,7 @@ func (b *Benchmark) compareResult() []*benchWithKey {
 				bench: res,
 			},
 		)
-		level.Debug(b.logger).Log("msg", "benchmark will be run", "package", res.head.meta.ImportPath, "benchmark", k.benchmark, "reason", res.reason)
+		level.Debug(b.logger).Log("msg", "benchmark worth running discovered", "package", res.head.meta.ImportPath, "benchmark", k.benchmark, "reason", res.reason)
 	}
 
 	return benchmarkToBeRun
