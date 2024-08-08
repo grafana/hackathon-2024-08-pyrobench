@@ -305,21 +305,72 @@ func (r *benchMap) get(k benchKey) *bench {
 
 // note(bryan): Only pass tables on the last call to generateReport.
 func (b *Benchmark) generateReport(benchmarkGroups [][]*benchWithKey, tables *benchtab.Tables) *report.BenchmarkReport {
-	r := &report.BenchmarkReport{
-		BaseRef:         b.baseCommit,
-		HeadRef:         b.headCommit,
-		BenchStatTables: tables,
+	rpt := &report.BenchmarkReport{
+		BaseRef: b.baseCommit,
+		HeadRef: b.headCommit,
 	}
 
 	for _, results := range benchmarkGroups {
 		for _, res := range results {
-			r.Runs = append(r.Runs, report.BenchmarkRun{
-				Name:    fmt.Sprintf("%s.%s", res.key.packagePath, res.key.benchmark),
-				Results: res.bench.results,
+			for i, r := range res.bench.results {
+				switch r.Unit {
+				case "ns":
+					table := getTableForUnit(tables, "sec/op")
+					if table == nil {
+						continue
+					}
+
+					for _, col := range table.Cols {
+						switch col.String() {
+						case "source:base":
+							res.bench.results[i].BaseValue.ProfileValue = int64(table.Summary[col].Summary * 1e9)
+						case "source:head":
+							res.bench.results[i].HeadValue.ProfileValue = int64(table.Summary[col].Summary * 1e9)
+						}
+					}
+
+					// TODO(bryan): Add diff value to report.BenchmarkResult do
+					// use benchstat's diff value instead of calculating our
+					// own.
+				case "bytes":
+					table := getTableForUnit(tables, "B/op")
+					if table == nil {
+						continue
+					}
+
+					for _, col := range table.Cols {
+						switch col.String() {
+						case "source:base":
+							res.bench.results[i].BaseValue.ProfileValue = int64(table.Summary[col].Summary)
+						case "source:head":
+							res.bench.results[i].HeadValue.ProfileValue = int64(table.Summary[col].Summary)
+						}
+					}
+				case "": // allocs
+					table := getTableForUnit(tables, "allocs/op")
+					if table == nil {
+						continue
+					}
+
+					for _, col := range table.Cols {
+						switch col.String() {
+						case "source:base":
+							res.bench.results[i].BaseValue.ProfileValue = int64(table.Summary[col].Summary)
+						case "source:head":
+							res.bench.results[i].HeadValue.ProfileValue = int64(table.Summary[col].Summary)
+						}
+					}
+				}
+			}
+
+			rpt.Runs = append(rpt.Runs, report.BenchmarkRun{
+				Name:            fmt.Sprintf("%s.%s", res.key.packagePath, res.key.benchmark),
+				Results:         res.bench.results,
+				BenchStatTables: tables,
 			})
 		}
 	}
-	return r
+	return rpt
 }
 
 func (b *Benchmark) compareResult() []*benchWithKey {
@@ -374,6 +425,15 @@ func (b *Benchmark) compareResult() []*benchWithKey {
 	}
 
 	return benchmarkToBeRun
+}
+
+func getTableForUnit(tables *benchtab.Tables, unit string) *benchtab.Table {
+	for _, table := range tables.Tables {
+		if table.Unit == unit {
+			return table
+		}
+	}
+	return nil
 }
 
 func resultFromPackages(f func(benchKey, *Package), pkgs []Package) {

@@ -49,6 +49,9 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs, filter ...*B
 			return fmt.Errorf("error initializing github reporter: %w", err)
 		}
 		defer reporter.Stop()
+	} else if args.Report != nil && args.Report.ConsoleCommenter {
+		reporter := report.NewConsoleReporter(updateCh)
+		defer reporter.Stop()
 	} else {
 		defer report.NewNoop(updateCh).Stop()
 	}
@@ -182,19 +185,28 @@ func (b *Benchmark) compareWithReporter(ctx context.Context, args *CompareArgs, 
 				if err != nil {
 					level.Error(b.logger).Log("msg", "error running benchmark", "package", r.base.meta.ImportPath, "benchmark", r.key.benchmark, "err", err)
 				}
+
+				b.addBenchStatResults(res, benchSourceBase)
 				r.addResult(benchSourceBase, res)
-				updateCh <- b.generateReport(benchmarkGroups, nil)
+				// updateCh <- b.generateReport(benchmarkGroups, nil)
 			}
 			if r.head != nil {
 				res, err := r.bench.head.runBenchmark(ctx, benchTime, benchCount, r.key.benchmark)
 				if err != nil {
 					level.Error(b.logger).Log("msg", "error running benchmark", "package", r.base.meta.ImportPath, "benchmark", r.key.benchmark, "err", err)
 				}
+
+				b.addBenchStatResults(res, benchSourceHead)
 				r.addResult(benchSourceHead, res)
-				updateCh <- b.generateReport(benchmarkGroups, nil)
+				// updateCh <- b.generateReport(benchmarkGroups, nil)
 			}
 		}
+
+		tables := b.statBuilders[benchmarks[0].key.benchmark].ToTables()
+		tables.ToText(os.Stdout, false)
+		updateCh <- b.generateReport(benchmarkGroups, tables)
 	}
 
+	close(updateCh)
 	return nil
 }
