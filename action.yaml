@@ -20,7 +20,7 @@ runs:
       PYROBENCH_VERSION=${PYROBENCH_VERSION:-latest}
 
       # if version is dev run straight from main
-      if [ "${PYROBENCH_VERSION}" == "dev"]; then
+      if [ "${PYROBENCH_VERSION}" == "dev" ]; then
         exec go run github.com/grafana/pyrobench@main -v github-comment-hook --github-commenter
       fi
 
