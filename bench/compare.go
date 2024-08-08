@@ -2,7 +2,6 @@ package bench
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -49,6 +48,9 @@ func (b *Benchmark) Compare(ctx context.Context, args *CompareArgs, filter ...*B
 		if err != nil {
 			return fmt.Errorf("error initializing github reporter: %w", err)
 		}
+		defer reporter.Stop()
+	} else if args.Report != nil && args.Report.ConsoleCommenter {
+		reporter := report.NewConsoleReporter(updateCh)
 		defer reporter.Stop()
 	} else {
 		defer report.NewNoop(updateCh).Stop()
@@ -170,14 +172,9 @@ func (b *Benchmark) compareWithReporter(ctx context.Context, args *CompareArgs, 
 		}
 	}
 
-	updateCh <- b.generateReport(benchmarkGroups)
+	updateCh <- b.generateReport(benchmarkGroups, nil)
 	for idx, benchmarks := range benchmarkGroups {
 		for _, r := range benchmarks {
-			// TODO(bryan): This is the output stream. The github action will
-			// forward this to later steps in the job, ultimately using this info to
-			// build the report comment. We should make this configurable.
-			output := os.Stdout
-
 			f := filter[idx]
 
 			benchTime := args.BenchTime
@@ -194,37 +191,28 @@ func (b *Benchmark) compareWithReporter(ctx context.Context, args *CompareArgs, 
 				if err != nil {
 					level.Error(b.logger).Log("msg", "error running benchmark", "package", r.base.meta.ImportPath, "benchmark", r.key.benchmark, "err", err)
 				}
+
+				b.addBenchStatResults(res, benchSourceBase)
 				r.addResult(benchSourceBase, res)
-				updateCh <- b.generateReport(benchmarkGroups)
-				err = json.NewEncoder(output).Encode(BenchmarkResult{
-					Ref:       b.baseCommit,
-					Type:      "base",
-					Benchmark: res,
-				})
-				if err != nil {
-					level.Error(b.logger).Log("msg", "error encoding baseline benchmark result", "err", err)
-					return err
-				}
+				// updateCh <- b.generateReport(benchmarkGroups, nil)
 			}
 			if r.head != nil {
 				res, err := r.bench.head.runBenchmark(ctx, benchTime, benchCount, r.key.benchmark)
 				if err != nil {
 					level.Error(b.logger).Log("msg", "error running benchmark", "package", r.base.meta.ImportPath, "benchmark", r.key.benchmark, "err", err)
 				}
+
+				b.addBenchStatResults(res, benchSourceHead)
 				r.addResult(benchSourceHead, res)
-				updateCh <- b.generateReport(benchmarkGroups)
-				err = json.NewEncoder(output).Encode(BenchmarkResult{
-					Ref:       b.headCommit,
-					Type:      "head",
-					Benchmark: res,
-				})
-				if err != nil {
-					level.Error(b.logger).Log("msg", "error head encoding benchmark result", "err", err)
-					return err
-				}
+				// updateCh <- b.generateReport(benchmarkGroups, nil)
 			}
 		}
+
+		tables := b.statBuilders[benchmarks[0].key.benchmark].ToTables()
+		tables.ToText(os.Stdout, false)
+		updateCh <- b.generateReport(benchmarkGroups, tables)
 	}
 
+	close(updateCh)
 	return nil
 }

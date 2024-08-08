@@ -10,8 +10,8 @@ import (
 
 func NewDefaultBuilder() (*Builder, *benchproc.Filter, error) {
 	const defaultTable = ".config"
-	const defaultRow = ".fullname"
-	const defaultCol = ".file"
+	const defaultRow = "name"
+	const defaultCol = "source"
 	const defaultFilter = "*"
 
 	filter, err := benchproc.NewFilter(defaultFilter)
@@ -46,36 +46,3 @@ func NewDefaultBuilder() (*Builder, *benchproc.Filter, error) {
 	stat := NewBuilder(tableBy, rowBy, colBy, residue)
 	return stat, filter, nil
 }
-
-// func Compare(base []*benchfmt.Result, head []*benchfmt.Result) error {
-// 	stat, filter, err := NewDefaultBuilder()
-// 	if err != nil {
-// 		return fmt.Errorf("failed to build benchmark result reader: %w", err)
-// 	}
-
-// 	for _, r := range base {
-// 		ok, err := filter.Apply(r)
-// 		if !ok && err != nil {
-// 			return fmt.Errorf("failed to filter base benchmark: %w", err)
-// 		}
-
-// 		stat.Add(r)
-// 	}
-
-// 	for _, r := range head {
-// 		ok, err := filter.Apply(r)
-// 		if !ok && err != nil {
-// 			return fmt.Errorf("failed to filter head benchmark: %w", err)
-// 		}
-
-// 		stat.Add(r)
-// 	}
-
-// 	tableBuf := new(bytes.Buffer)
-// 	stat.ToTables(TableOpts{
-// 		Confidence: 0.95,
-// 		Thresholds: &benchmath.DefaultThresholds,
-// 		Units:      benchReader.Units(),
-// 	}).ToText(tableBuf, false)
-// 	fmt.Println("BRYAN stat=", tableBuf.String())
-// }

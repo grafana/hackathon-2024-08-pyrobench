@@ -13,7 +13,11 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
+	"golang.org/x/perf/benchfmt"
+	"golang.org/x/perf/benchmath"
+	"golang.org/x/perf/benchproc"
 
+	"github.com/grafana/pyrobench/benchtab"
 	"github.com/grafana/pyrobench/report"
 )
 
@@ -69,6 +73,8 @@ type Benchmark struct {
 	headDir      string
 	headCommit   string
 	headPackages []Package
+
+	statBuilders map[string]*StatBuilder
 }
 
 type BenchmarkResult struct {
@@ -77,10 +83,12 @@ type BenchmarkResult struct {
 	Benchmark *benchmarkResult `json:"benchmark"`
 }
 
-func New(logger log.Logger) *Benchmark {
-	return &Benchmark{
-		logger: logger,
+func New(logger log.Logger) (*Benchmark, error) {
+	b := &Benchmark{
+		logger:       logger,
+		statBuilders: make(map[string]*StatBuilder),
 	}
+	return b, nil
 }
 
 func (b *Benchmark) prerequisites(_ context.Context) error {
@@ -95,13 +103,42 @@ func (b *Benchmark) prerequisites(_ context.Context) error {
 		}(),
 	)
 }
+
 func (b *Benchmark) gitRevParse(ctx context.Context, rev string) (string, error) {
 	c, err := exec.CommandContext(ctx, "git", "rev-parse", rev).Output()
 	if err != nil {
 		return "", err
 	}
 	return strings.TrimSpace(string(c)), nil
+}
 
+func (b *Benchmark) addBenchStatResults(res *benchmarkResult, src benchSource) {
+	builder, ok := b.statBuilders[res.Name]
+	if !ok {
+		var err error
+		builder, err = NewStatBuilder()
+		if err != nil {
+			level.Error(b.logger).Log("msg", "error creating stat builder", "err", err)
+			return
+		}
+		b.statBuilders[res.Name] = builder
+	}
+
+	if builder.Units == nil {
+		builder.Units = res.Units
+	}
+
+	for _, r := range res.RawResult {
+		ok, err := builder.Filter.Apply(r)
+		if !ok && err != nil {
+			// Non-fatal error, let's just skip this result.
+			level.Error(b.logger).Log("msg", "error applying filter", "err", err)
+			continue
+		}
+
+		r.SetConfig("source", src.String())
+		builder.Stats.Add(r)
+	}
 }
 
 func git(args ...string) ([]byte, error) {
@@ -175,6 +212,17 @@ const (
 	benchSourceHead
 	benchSourceBase
 )
+
+func (b benchSource) String() string {
+	switch b {
+	case benchSourceBase:
+		return "base"
+	case benchSourceHead:
+		return "head"
+	default:
+		return "unknown"
+	}
+}
 
 func (b *bench) addResult(source benchSource, res *benchmarkResult) {
 	m := map[string]struct {
@@ -255,20 +303,74 @@ func (r *benchMap) get(k benchKey) *bench {
 	return &r.results[idx]
 }
 
-func (b *Benchmark) generateReport(benchmarkGroups [][]*benchWithKey) *report.BenchmarkReport {
-	r := &report.BenchmarkReport{
+// note(bryan): Only pass tables on the last call to generateReport.
+func (b *Benchmark) generateReport(benchmarkGroups [][]*benchWithKey, tables *benchtab.Tables) *report.BenchmarkReport {
+	rpt := &report.BenchmarkReport{
 		BaseRef: b.baseCommit,
 		HeadRef: b.headCommit,
 	}
+
 	for _, results := range benchmarkGroups {
 		for _, res := range results {
-			r.Runs = append(r.Runs, report.BenchmarkRun{
-				Name:    fmt.Sprintf("%s.%s", res.key.packagePath, res.key.benchmark),
-				Results: res.bench.results,
+			for i, r := range res.bench.results {
+				switch r.Unit {
+				case "ns":
+					table := getTableForUnit(tables, "sec/op")
+					if table == nil {
+						continue
+					}
+
+					for _, col := range table.Cols {
+						switch col.String() {
+						case "source:base":
+							res.bench.results[i].BaseValue.ProfileValue = int64(table.Summary[col].Summary * 1e9)
+						case "source:head":
+							res.bench.results[i].HeadValue.ProfileValue = int64(table.Summary[col].Summary * 1e9)
+						}
+					}
+
+					// TODO(bryan): Add diff value to report.BenchmarkResult do
+					// use benchstat's diff value instead of calculating our
+					// own.
+				case "bytes":
+					table := getTableForUnit(tables, "B/op")
+					if table == nil {
+						continue
+					}
+
+					for _, col := range table.Cols {
+						switch col.String() {
+						case "source:base":
+							res.bench.results[i].BaseValue.ProfileValue = int64(table.Summary[col].Summary)
+						case "source:head":
+							res.bench.results[i].HeadValue.ProfileValue = int64(table.Summary[col].Summary)
+						}
+					}
+				case "": // allocs
+					table := getTableForUnit(tables, "allocs/op")
+					if table == nil {
+						continue
+					}
+
+					for _, col := range table.Cols {
+						switch col.String() {
+						case "source:base":
+							res.bench.results[i].BaseValue.ProfileValue = int64(table.Summary[col].Summary)
+						case "source:head":
+							res.bench.results[i].HeadValue.ProfileValue = int64(table.Summary[col].Summary)
+						}
+					}
+				}
+			}
+
+			rpt.Runs = append(rpt.Runs, report.BenchmarkRun{
+				Name:            fmt.Sprintf("%s.%s", res.key.packagePath, res.key.benchmark),
+				Results:         res.bench.results,
+				BenchStatTables: tables,
 			})
 		}
 	}
-	return r
+	return rpt
 }
 
 func (b *Benchmark) compareResult() []*benchWithKey {
@@ -325,6 +427,15 @@ func (b *Benchmark) compareResult() []*benchWithKey {
 	return benchmarkToBeRun
 }
 
+func getTableForUnit(tables *benchtab.Tables, unit string) *benchtab.Table {
+	for _, table := range tables.Tables {
+		if table.Unit == unit {
+			return table
+		}
+	}
+	return nil
+}
+
 func resultFromPackages(f func(benchKey, *Package), pkgs []Package) {
 	for idx := range pkgs {
 		p := &pkgs[idx]
@@ -332,4 +443,31 @@ func resultFromPackages(f func(benchKey, *Package), pkgs []Package) {
 			f(benchKey{p.meta.ImportPath, b.Name}, p)
 		}
 	}
+}
+
+type StatBuilder struct {
+	Stats  *benchtab.Builder
+	Filter *benchproc.Filter
+	Units  benchfmt.UnitMetadataMap
+}
+
+func (sb *StatBuilder) ToTables() *benchtab.Tables {
+	return sb.Stats.ToTables(benchtab.TableOpts{
+		Confidence: 0.95,
+		Thresholds: &benchmath.DefaultThresholds,
+		Units:      sb.Units,
+	})
+}
+
+func NewStatBuilder() (*StatBuilder, error) {
+	stat, filter, err := benchtab.NewDefaultBuilder()
+	if err != nil {
+		return nil, err
+	}
+
+	sb := &StatBuilder{
+		Stats:  stat,
+		Filter: filter,
+	}
+	return sb, nil
 }

@@ -3,6 +3,10 @@
 
 {{ if .Finished }}__Finished__{{ else }}__In progress__{{ end }}
 
+{{ if .BenchStat }}
+{{ .BenchStat }}
+{{ end }}
+
 {{.Report.BaseRef}} -> {{.Report.HeadRef}} ([compare](https://github.com/{{ .GitHubOwner }}/{{ .GitHubRepo }}/compare/{{.Report.BaseRef}}...{{.Report.HeadRef}}))
 
 {{- range .Report.Runs }}
