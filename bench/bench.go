@@ -323,7 +323,9 @@ func (b *Benchmark) generateReport(benchmarkGroups [][]*benchWithKey) *report.Be
 						continue
 					}
 
-					res.bench.results[i].Name = fmt.Sprintf("%s (%s)", r.Name, unit)
+					if !strings.HasSuffix(res.bench.results[i].Name, ")") {
+						res.bench.results[i].Name = fmt.Sprintf("%s (%s)", r.Name, unit)
+					}
 					for _, col := range table.Cols {
 						switch col.String() {
 						case "source:base":
@@ -343,7 +345,9 @@ func (b *Benchmark) generateReport(benchmarkGroups [][]*benchWithKey) *report.Be
 						continue
 					}
 
-					res.bench.results[i].Name = fmt.Sprintf("%s (%s)", r.Name, unit)
+					if !strings.HasSuffix(res.bench.results[i].Name, ")") {
+						res.bench.results[i].Name = fmt.Sprintf("%s (%s)", r.Name, unit)
+					}
 					for _, col := range table.Cols {
 						switch col.String() {
 						case "source:base":
@@ -359,7 +363,9 @@ func (b *Benchmark) generateReport(benchmarkGroups [][]*benchWithKey) *report.Be
 						continue
 					}
 
-					res.bench.results[i].Name = fmt.Sprintf("%s (%s)", r.Name, unit)
+					if !strings.HasSuffix(res.bench.results[i].Name, ")") {
+						res.bench.results[i].Name = fmt.Sprintf("%s (%s)", r.Name, unit)
+					}
 					for _, col := range table.Cols {
 						switch col.String() {
 						case "source:base":
