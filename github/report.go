@@ -125,9 +125,12 @@ func (gh *gitHubComment) postComment(ctx context.Context, body string) error {
 func (gh *gitHubComment) run(ctx context.Context) {
 	var lastReport *report.BenchmarkReport
 	defer func() {
-		lastReport.Finished = true
-		if err := gh.postReport(ctx, lastReport); err != nil {
-			level.Warn(gh.logger).Log("msg", "failed to post report", "err", err)
+		// finish the report if it's not finished
+		if lastReport != nil && !lastReport.Finished {
+			lastReport.Finished = true
+			if err := gh.postReport(ctx, lastReport); err != nil {
+				level.Warn(gh.logger).Log("msg", "failed to post report", "err", err)
+			}
 		}
 	}()
 	for {

@@ -141,7 +141,9 @@ func (b *Benchmark) compareWithReporter(ctx context.Context, args *CompareArgs, 
 	}
 	benchmarks := b.compareResult()
 	if len(benchmarks) == 0 {
-		level.Info(b.logger).Log("msg", "no benchmarks to run")
+		msg := "no benchmarks to run"
+		updateCh <- b.generateReport(nil).WithMessage(msg)
+		level.Info(b.logger).Log("msg", msg)
 		return nil
 	}
 	updateCh <- b.generateReport([][]*benchWithKey{benchmarks})
@@ -169,7 +171,9 @@ func (b *Benchmark) compareWithReporter(ctx context.Context, args *CompareArgs, 
 
 	benchmarks = b.compareResult()
 	if len(benchmarks) == 0 {
-		level.Info(b.logger).Log("msg", "no benchmarks to run")
+		msg := "no benchmarks to run"
+		updateCh <- b.generateReport(nil).WithMessage(msg)
+		level.Info(b.logger).Log("msg", msg)
 		return nil
 	}
 
@@ -192,7 +196,9 @@ func (b *Benchmark) compareWithReporter(ctx context.Context, args *CompareArgs, 
 			}
 		}
 		if !somethingMatched {
-			level.Info(b.logger).Log("msg", "no benchmarks to run")
+			msg := "no benchmarks to run"
+			updateCh <- b.generateReport(nil).WithMessage(msg)
+			level.Info(b.logger).Log("msg", msg)
 			return nil
 		}
 	}

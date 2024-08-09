@@ -41,6 +41,7 @@ func (b *Benchmark) GitHubCommentHook(ctx context.Context, args *github.CommentH
 	if err != nil {
 		return err
 	}
+	defer reporter.Stop()
 
 	r, err := gch.ParseBenchmarks(ctx)
 	if err != nil {
@@ -85,7 +86,6 @@ func (b *Benchmark) GitHubCommentHook(ctx context.Context, args *github.CommentH
 			Count:  f.Count,
 		})
 	}
-	defer reporter.Stop()
 
 	return b.compareWithReporter(ctx, &CompareArgs{
 		BenchTime:  "2s",
