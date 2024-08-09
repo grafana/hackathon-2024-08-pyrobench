@@ -202,6 +202,7 @@ type bench struct {
 	head   *Package
 	reason string
 
+	tables  *benchtab.Tables
 	results []report.BenchmarkResult
 }
 
@@ -304,7 +305,7 @@ func (r *benchMap) get(k benchKey) *bench {
 }
 
 // note(bryan): Only pass tables on the last call to generateReport.
-func (b *Benchmark) generateReport(benchmarkGroups [][]*benchWithKey, tables *benchtab.Tables) *report.BenchmarkReport {
+func (b *Benchmark) generateReport(benchmarkGroups [][]*benchWithKey) *report.BenchmarkReport {
 	rpt := &report.BenchmarkReport{
 		BaseRef: b.baseCommit,
 		HeadRef: b.headCommit,
@@ -317,7 +318,7 @@ func (b *Benchmark) generateReport(benchmarkGroups [][]*benchWithKey, tables *be
 				switch r.Unit {
 				case "ns":
 					const unit = "sec/op"
-					table := getTableForUnit(tables, unit)
+					table := getTableForUnit(res.tables, unit)
 					if table == nil {
 						continue
 					}
@@ -337,7 +338,7 @@ func (b *Benchmark) generateReport(benchmarkGroups [][]*benchWithKey, tables *be
 					// own.
 				case "bytes":
 					const unit = "B/op"
-					table := getTableForUnit(tables, "B/op")
+					table := getTableForUnit(res.tables, "B/op")
 					if table == nil {
 						continue
 					}
@@ -353,7 +354,7 @@ func (b *Benchmark) generateReport(benchmarkGroups [][]*benchWithKey, tables *be
 					}
 				case "": // allocs
 					const unit = "allocs/op"
-					table := getTableForUnit(tables, unit)
+					table := getTableForUnit(res.tables, unit)
 					if table == nil {
 						continue
 					}
@@ -374,7 +375,7 @@ func (b *Benchmark) generateReport(benchmarkGroups [][]*benchWithKey, tables *be
 				Name:            fmt.Sprintf("%s.%s", res.key.packagePath, res.key.benchmark),
 				Reason:          res.bench.reason,
 				Results:         res.bench.results,
-				BenchStatTables: tables,
+				BenchStatTables: res.tables,
 			})
 		}
 	}

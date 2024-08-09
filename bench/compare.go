@@ -144,7 +144,7 @@ func (b *Benchmark) compareWithReporter(ctx context.Context, args *CompareArgs, 
 		level.Info(b.logger).Log("msg", "no benchmarks to run")
 		return nil
 	}
-	updateCh <- b.generateReport([][]*benchWithKey{benchmarks}, nil)
+	updateCh <- b.generateReport([][]*benchWithKey{benchmarks})
 
 	level.Info(b.logger).Log("msg", "compiling packages with tests to figure out what changed", "base", countPackagesWithTests(basePackages), "head", countPackagesWithTests(headPackages))
 	g, gctx = errgroup.WithContext(ctx)
@@ -197,7 +197,7 @@ func (b *Benchmark) compareWithReporter(ctx context.Context, args *CompareArgs, 
 		}
 	}
 
-	updateCh <- b.generateReport(benchmarkGroups, nil)
+	updateCh <- b.generateReport(benchmarkGroups)
 	for idx, benchmarks := range benchmarkGroups {
 		for _, r := range benchmarks {
 			f := filter[idx]
@@ -231,11 +231,15 @@ func (b *Benchmark) compareWithReporter(ctx context.Context, args *CompareArgs, 
 				r.addResult(benchSourceHead, res)
 				// updateCh <- b.generateReport(benchmarkGroups, nil)
 			}
+
+			tables := b.statBuilders[r.key.benchmark].ToTables()
+			tables.ToText(os.Stdout, false)
+			r.tables = tables
+
+			updateCh <- b.generateReport(benchmarkGroups)
+
 		}
 
-		tables := b.statBuilders[benchmarks[0].key.benchmark].ToTables()
-		tables.ToText(os.Stdout, false)
-		updateCh <- b.generateReport(benchmarkGroups, tables)
 	}
 
 	close(updateCh)
