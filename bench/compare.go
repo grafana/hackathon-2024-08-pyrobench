@@ -113,10 +113,9 @@ func (b *Benchmark) compareWithReporter(ctx context.Context, args *CompareArgs, 
 	}
 	b.basePackages = basePackages
 
+	// listing benchmarks
 	g, gctx := errgroup.WithContext(ctx)
 	g.SetLimit(4)
-
-	level.Info(b.logger).Log("msg", "compiling packages with tests to figure out what changed", "base", countPackagesWithTests(basePackages), "head", countPackagesWithTests(headPackages))
 	for _, pkgs := range [][]Package{b.basePackages, b.headPackages} {
 		for idx := range pkgs {
 			p := &pkgs[idx]
@@ -136,13 +135,39 @@ func (b *Benchmark) compareWithReporter(ctx context.Context, args *CompareArgs, 
 			})
 		}
 	}
+	err = g.Wait()
+	if err != nil {
+		return err
+	}
+	benchmarks := b.compareResult()
+	if len(benchmarks) == 0 {
+		level.Info(b.logger).Log("msg", "no benchmarks to run")
+		return nil
+	}
+	updateCh <- b.generateReport([][]*benchWithKey{benchmarks}, nil)
 
+	level.Info(b.logger).Log("msg", "compiling packages with tests to figure out what changed", "base", countPackagesWithTests(basePackages), "head", countPackagesWithTests(headPackages))
+	g, gctx = errgroup.WithContext(ctx)
+	g.SetLimit(4)
+	for _, pkgs := range [][]Package{b.basePackages, b.headPackages} {
+		for idx := range pkgs {
+			p := &pkgs[idx]
+			g.Go(func() error {
+				// exit early when no benchmarks
+				if len(p.benchmarkNames) == 0 {
+					return nil
+				}
+
+				return p.compileTest(gctx)
+			})
+		}
+	}
 	err = g.Wait()
 	if err != nil {
 		return err
 	}
 
-	benchmarks := b.compareResult()
+	benchmarks = b.compareResult()
 	if len(benchmarks) == 0 {
 		level.Info(b.logger).Log("msg", "no benchmarks to run")
 		return nil

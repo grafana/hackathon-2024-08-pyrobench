@@ -1,6 +1,7 @@
 package report
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"strings"
@@ -23,8 +24,42 @@ type BenchmarkReport struct {
 
 type BenchmarkRun struct {
 	Name            string
+	Reason          string
 	Results         []BenchmarkResult
 	BenchStatTables *benchtab.Tables
+}
+
+func (r *BenchmarkRun) Status() string {
+	if len(r.Results) == 0 {
+		if r.Reason == "tbd" {
+			return "(detect code changes)"
+		} else {
+			return "(scheduled)"
+		}
+	}
+	var sb strings.Builder
+	sb.WriteString("(")
+	first := true
+	for _, result := range r.Results {
+		d, ok := result.diff()
+		if !ok {
+			continue
+		}
+		if first {
+			first = false
+		} else {
+			sb.WriteString(", ")
+		}
+
+		sb.WriteString(result.Name)
+		sb.WriteString("=")
+		sb.WriteString(humanize.CommafWithDigits(d, 2))
+		sb.WriteString(" %")
+	}
+
+	sb.WriteString(")")
+
+	return sb.String()
 }
 
 type BenchmarkValue struct {
@@ -71,12 +106,19 @@ func (r *BenchmarkResult) HeadMarkdown() string {
 	return r.HeadValue.markdown(r.Unit)
 }
 
-func (r *BenchmarkResult) DiffMarkdown() string {
+func (r *BenchmarkResult) diff() (float64, bool) {
 	if r.BaseValue.FlamegraphKey == "" || r.HeadValue.FlamegraphKey == "" {
-		return "n/a"
+		return 0, false
 	}
 
-	diff := float64(r.HeadValue.ProfileValue-r.BaseValue.ProfileValue) / float64(r.BaseValue.ProfileValue) * 100
+	return float64(r.HeadValue.ProfileValue-r.BaseValue.ProfileValue) / float64(r.BaseValue.ProfileValue) * 100, true
+}
+
+func (r *BenchmarkResult) DiffMarkdown() string {
+	diff, ok := r.diff()
+	if !ok {
+		return "n/a"
+	}
 
 	return fmt.Sprintf(
 		"[%s %%](%s/share/%s/%s)",
@@ -119,6 +161,7 @@ func AddArgs(cmd *kingpin.CmdClause) *Args {
 
 type Reporter interface {
 	Stop() error
+	HandleError(ctx context.Context, err error)
 }
 
 func NewConsoleReporter(ch <-chan *BenchmarkReport) Reporter {
@@ -141,6 +184,10 @@ func (r *consoleReporter) Stop() error {
 	close(r.stopCh)
 	r.wg.Wait()
 	return nil
+}
+
+func (r *consoleReporter) HandleError(ctx context.Context, err error) {
+	fmt.Printf("Error: %s\n", err)
 }
 
 func (r *consoleReporter) run() {
@@ -201,6 +248,8 @@ type noopReporter struct {
 func (r *noopReporter) Stop() error {
 	return nil
 }
+
+func (r *noopReporter) HandleError(_ context.Context, _ error) {}
 
 func NewNoop(ch <-chan *BenchmarkReport) Reporter {
 	if ch != nil {

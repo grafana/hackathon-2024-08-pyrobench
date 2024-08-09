@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"fmt"
 	"html/template"
 	"strings"
 
@@ -47,6 +48,39 @@ func newCommentReporterFromGitHubCommon(logger log.Logger, ghCommon *githubCommo
 
 	return gh, nil
 }
+func (gh *gitHubComment) react(ctx context.Context, content string) error {
+	if gh.eventCommentID == 0 {
+		return nil
+	}
+	_, _, err := gh.githubCommon.client.Reactions.CreateIssueCommentReaction(
+		ctx,
+		gh.owner,
+		gh.repo,
+		gh.eventCommentID,
+		"confused",
+	)
+	return err
+}
+
+func (gh *gitHubComment) HandleError(ctx context.Context, err error) {
+	if err := gh.react(ctx, "confused"); err != nil {
+		level.Warn(gh.logger).Log("msg", "failed to add reaction to issue comment", "err", err)
+	}
+
+	body := fmt.Sprintf("Pyrobench error: \n ```\n%s\n```\n", err.Error())
+
+	if _, _, err := gh.client.Issues.CreateComment(
+		ctx,
+		gh.owner,
+		gh.repo,
+		gh.pr,
+		&github.IssueComment{
+			Body: &body,
+		},
+	); err != nil {
+		level.Warn(gh.logger).Log("msg", "failed to error message issue comment", "err", err)
+	}
+}
 
 func (gh *gitHubComment) render(re *report.BenchmarkReport) string {
 	buf := &strings.Builder{}
@@ -67,6 +101,12 @@ func (gh *gitHubComment) render(re *report.BenchmarkReport) string {
 }
 
 func (gh *gitHubComment) postComment(ctx context.Context, body string) error {
+	if !gh.reacted {
+		if err := gh.react(ctx, "eyes"); err != nil {
+			level.Warn(gh.logger).Log("msg", "failed to add reaction to issue comment", "err", err)
+		}
+		gh.reacted = true
+	}
 	if gh.commentID != 0 {
 		// update an existing comment
 		_, _, err := gh.client.Issues.EditComment(

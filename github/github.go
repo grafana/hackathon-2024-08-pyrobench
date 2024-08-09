@@ -56,10 +56,11 @@ type githubContext struct {
 }
 
 type githubCommon struct {
-	body  string
-	pr    int
-	owner string
-	repo  string
+	body           string
+	pr             int
+	owner          string
+	repo           string
+	eventCommentID int64
 
 	client *github.Client
 }
@@ -88,10 +89,11 @@ func newGitHubCommon(args *Args) (*githubCommon, *githubContext, error) {
 	}
 
 	return &githubCommon{
-		pr:     ghContext.Event.Issue.Number,
-		owner:  parts[0],
-		repo:   parts[1],
-		client: github.NewClient(nil).WithAuthToken(args.Token),
+		pr:             ghContext.Event.Issue.Number,
+		owner:          parts[0],
+		repo:           parts[1],
+		client:         github.NewClient(nil).WithAuthToken(args.Token),
+		eventCommentID: ghContext.Event.Comment.ID,
 	}, &ghContext, nil
 }
 
@@ -105,6 +107,7 @@ type gitHubComment struct {
 	template *template.Template
 
 	commentID int64 // this is a unique identifier for the comment
+	reacted   bool  // have I reacted to source command yet
 
 	GitHubCommenter bool
 

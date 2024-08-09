@@ -45,13 +45,13 @@ __In progress__
 
 abcd -> ef00 ([compare](https://github.com/my-org/my-repo/compare/abcd...ef00))
 <details>
-<summary><tt>pkg1.BenchTestA</tt></summary>
+    <summary><tt>pkg1.BenchTestA</tt>(scheduled)</summary>
 
 | Resource | Base | Head | Diff % |
 |----------|-----:|-----:|-------:|
 </details>
 <details>
-<summary><tt>pkg1.BenchTestB</tt></summary>
+    <summary><tt>pkg1.BenchTestB</tt>(scheduled)</summary>
 
 | Resource | Base | Head | Diff % |
 |----------|-----:|-----:|-------:|
@@ -92,7 +92,7 @@ __In progress__
 
 abcd -> ef00 ([compare](https://github.com/my-org/my-repo/compare/abcd...ef00))
 <details>
-<summary><tt>pkg1.BenchTestA</tt></summary>
+    <summary><tt>pkg1.BenchTestA</tt>(cpu=100 %, alloc_space=-0.04 %)</summary>
 
 | Resource | Base | Head | Diff % |
 |----------|-----:|-----:|-------:|
@@ -100,7 +100,7 @@ abcd -> ef00 ([compare](https://github.com/my-org/my-repo/compare/abcd...ef00))
 | alloc_space | [2.0 MiB](https://flamegraph.com/share/a-alloc-base) | [2.0 MiB](https://flamegraph.com/share/a-alloc-head) | [-0.04 %](https://flamegraph.com/share/a-alloc-base/a-alloc-head) |
 </details>
 <details>
-<summary><tt>pkg1.BenchTestB</tt></summary>
+    <summary><tt>pkg1.BenchTestB</tt>(scheduled)</summary>
 
 | Resource | Base | Head | Diff % |
 |----------|-----:|-----:|-------:|

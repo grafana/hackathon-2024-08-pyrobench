@@ -372,6 +372,7 @@ func (b *Benchmark) generateReport(benchmarkGroups [][]*benchWithKey, tables *be
 
 			rpt.Runs = append(rpt.Runs, report.BenchmarkRun{
 				Name:            fmt.Sprintf("%s.%s", res.key.packagePath, res.key.benchmark),
+				Reason:          res.bench.reason,
 				Results:         res.bench.results,
 				BenchStatTables: tables,
 			})
@@ -406,7 +407,7 @@ func (b *Benchmark) compareResult() []*benchWithKey {
 		res := &r.results[idx]
 		k := keys[idx]
 
-		if res.base != nil && res.head != nil {
+		if res.base != nil && res.head != nil && len(res.base.testBinaryHash) > 0 && len(res.head.testBinaryHash) > 0 {
 			// compare hash
 			if bytes.Equal(res.base.testBinaryHash, res.head.testBinaryHash) {
 				continue
@@ -417,8 +418,10 @@ func (b *Benchmark) compareResult() []*benchWithKey {
 			res.reason = "benchmark does not exist in base"
 		} else if res.head == nil {
 			res.reason = "benchmark does not exist in head"
+		} else if len(res.base.testBinaryHash) > 0 && len(res.head.testBinaryHash) > 0 {
+			res.reason = "code changed"
 		} else {
-			res.reason = "code change"
+			res.reason = "tbd"
 		}
 
 		benchmarkToBeRun = append(
@@ -428,7 +431,6 @@ func (b *Benchmark) compareResult() []*benchWithKey {
 				bench: res,
 			},
 		)
-		level.Debug(b.logger).Log("msg", "benchmark worth running discovered", "package", res.head.meta.ImportPath, "benchmark", k.benchmark, "reason", res.reason)
 	}
 
 	return benchmarkToBeRun

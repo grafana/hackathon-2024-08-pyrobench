@@ -36,8 +36,15 @@ func (b *Benchmark) GitHubCommentHook(ctx context.Context, args *github.CommentH
 		return err
 	}
 
+	updateCh := make(chan *report.BenchmarkReport)
+	reporter, err := gch.Reporter(updateCh)
+	if err != nil {
+		return err
+	}
+
 	r, err := gch.ParseBenchmarks(ctx)
 	if err != nil {
+		reporter.HandleError(ctx, err)
 		return err
 	}
 	if len(r.Filter) == 0 {
@@ -74,12 +81,6 @@ func (b *Benchmark) GitHubCommentHook(ctx context.Context, args *github.CommentH
 			Time:   f.Time,
 			Count:  f.Count,
 		})
-	}
-
-	updateCh := make(chan *report.BenchmarkReport)
-	reporter, err := gch.Reporter(updateCh)
-	if err != nil {
-		return err
 	}
 	defer reporter.Stop()
 
