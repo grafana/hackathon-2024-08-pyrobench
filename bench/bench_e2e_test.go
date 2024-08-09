@@ -76,7 +76,7 @@ func TestBenchmarkE2E(t *testing.T) {
 			},
 			GitBase:    "HEAD~1",
 			BenchTime:  "200ms",
-			BenchCount: 5,
+			BenchCount: 6,
 			Report: &report.Args{
 				GitHubCommenter: os.Getenv("PYROBENCH_GITHUB_REPORT") == "true",
 			},

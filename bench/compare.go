@@ -31,7 +31,7 @@ func AddCompareCommand(app *kingpin.Application) (*kingpin.CmdClause, *CompareAr
 	}
 	cmd.Flag("git-base", "Git base commit").Default("HEAD~1").StringVar(&args.GitBase)
 	cmd.Flag("bench-time", "Golang's benchtime argument.").Default("2s").StringVar(&args.BenchTime)
-	cmd.Flag("bench-count", "Golang's count argument. How often to repeat the benchmarks").Default("5").Uint16Var(&args.BenchCount)
+	cmd.Flag("bench-count", "Golang's count argument. How often to repeat the benchmarks").Default("6").Uint16Var(&args.BenchCount)
 	return cmd, &args
 }
 
