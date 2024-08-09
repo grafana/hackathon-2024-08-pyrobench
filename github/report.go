@@ -135,7 +135,10 @@ func (gh *gitHubComment) run(ctx context.Context) {
 		case <-gh.stopCh:
 			// finalize something
 			return
-		case report := <-gh.ch:
+		case report, ok := <-gh.ch:
+			if !ok {
+				return
+			}
 			if err := gh.postReport(ctx, report); err != nil {
 				level.Warn(gh.logger).Log("msg", "failed to post comment", "err", err)
 			}
