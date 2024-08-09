@@ -48,11 +48,9 @@ func (b *Benchmark) GitHubCommentHook(ctx context.Context, args *github.CommentH
 		updateCh <- b.generateReport(nil).WithError(err)
 		return err
 	}
-
 	if len(r.Filter) == 0 {
-		msg := "no benchmarks to run"
-		updateCh <- b.generateReport(nil).WithMessage(msg)
-		level.Info(b.logger).Log("msg", msg)
+		// nothing to do, pyrobench has most likely not been mentioned
+		level.Info(b.logger).Log("msg", "no command supplied, nothing to do")
 		return nil
 	}
 
