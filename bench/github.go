@@ -44,11 +44,14 @@ func (b *Benchmark) GitHubCommentHook(ctx context.Context, args *github.CommentH
 
 	r, err := gch.ParseBenchmarks(ctx)
 	if err != nil {
-		reporter.HandleError(ctx, err)
+		updateCh <- b.generateReport(nil).WithError(err)
 		return err
 	}
+
 	if len(r.Filter) == 0 {
-		level.Info(b.logger).Log("msg", "no benchmarks to run")
+		msg := "no benchmarks to run"
+		updateCh <- b.generateReport(nil).WithMessage(msg)
+		level.Info(b.logger).Log("msg", msg)
 		return nil
 	}
 

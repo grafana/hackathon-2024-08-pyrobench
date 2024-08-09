@@ -2,9 +2,8 @@ package github
 
 import (
 	"context"
-	"fmt"
-	"html/template"
 	"strings"
+	"text/template"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -57,56 +56,44 @@ func (gh *gitHubComment) react(ctx context.Context, content string) error {
 		gh.owner,
 		gh.repo,
 		gh.eventCommentID,
-		"confused",
+		content,
 	)
 	return err
 }
 
-func (gh *gitHubComment) HandleError(ctx context.Context, err error) {
-	if err := gh.react(ctx, "confused"); err != nil {
-		level.Warn(gh.logger).Log("msg", "failed to add reaction to issue comment", "err", err)
-	}
-
-	body := fmt.Sprintf("Pyrobench error: \n ```\n%s\n```\n", err.Error())
-
-	if _, _, err := gh.client.Issues.CreateComment(
-		ctx,
-		gh.owner,
-		gh.repo,
-		gh.pr,
-		&github.IssueComment{
-			Body: &body,
-		},
-	); err != nil {
-		level.Warn(gh.logger).Log("msg", "failed to error message issue comment", "err", err)
-	}
-}
-
-func (gh *gitHubComment) render(re *report.BenchmarkReport) string {
+func (gh *gitHubComment) render(re *report.BenchmarkReport) (string, error) {
 	buf := &strings.Builder{}
 	if err := gh.template.Execute(buf, struct {
-		Report      *report.BenchmarkReport
-		Finished    bool
-		GitHubOwner string
-		GitHubRepo  string
+		Report  *report.BenchmarkReport
+		Compare string
 	}{
-		Report:      re,
-		Finished:    gh.finished,
-		GitHubOwner: gh.owner,
-		GitHubRepo:  gh.repo,
+		Report:  re,
+		Compare: re.MarkdownCompare(gh.owner, gh.repo),
 	}); err != nil {
-		level.Warn(gh.logger).Log("msg", "failed to render template", "err", err)
+		return "", err
 	}
-	return buf.String()
+	return buf.String(), nil
 }
-
-func (gh *gitHubComment) postComment(ctx context.Context, body string) error {
-	if !gh.reacted {
+func (gh *gitHubComment) postReport(ctx context.Context, report *report.BenchmarkReport) error {
+	body, err := gh.render(report)
+	if err != nil {
+		return err
+	}
+	if report.Error != nil {
+		if err := gh.react(ctx, "confused"); err != nil {
+			level.Warn(gh.logger).Log("msg", "failed to add reaction to issue comment", "err", err)
+		}
+	} else if !gh.reacted {
 		if err := gh.react(ctx, "eyes"); err != nil {
 			level.Warn(gh.logger).Log("msg", "failed to add reaction to issue comment", "err", err)
 		}
 		gh.reacted = true
 	}
+
+	return gh.postComment(ctx, body)
+}
+
+func (gh *gitHubComment) postComment(ctx context.Context, body string) error {
 	if gh.commentID != 0 {
 		// update an existing comment
 		_, _, err := gh.client.Issues.EditComment(
@@ -138,10 +125,9 @@ func (gh *gitHubComment) postComment(ctx context.Context, body string) error {
 func (gh *gitHubComment) run(ctx context.Context) {
 	var lastReport *report.BenchmarkReport
 	defer func() {
-		gh.finished = true
-		body := gh.render(lastReport)
-		if err := gh.postComment(ctx, body); err != nil {
-			level.Warn(gh.logger).Log("msg", "failed to post comment", "err", err)
+		lastReport.Finished = true
+		if err := gh.postReport(ctx, lastReport); err != nil {
+			level.Warn(gh.logger).Log("msg", "failed to post report", "err", err)
 		}
 	}()
 	for {
@@ -150,8 +136,7 @@ func (gh *gitHubComment) run(ctx context.Context) {
 			// finalize something
 			return
 		case report := <-gh.ch:
-			body := gh.render(report)
-			if err := gh.postComment(ctx, body); err != nil {
+			if err := gh.postReport(ctx, report); err != nil {
 				level.Warn(gh.logger).Log("msg", "failed to post comment", "err", err)
 			}
 			lastReport = report

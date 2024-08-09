@@ -4,9 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"html/template"
 	"strings"
 	"sync"
+	"text/template"
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/go-kit/log"

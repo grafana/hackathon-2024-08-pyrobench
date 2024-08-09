@@ -1,11 +1,10 @@
 package report
 
 import (
-	"context"
 	"fmt"
-	"html/template"
 	"strings"
 	"sync"
+	"text/template"
 
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/dustin/go-humanize"
@@ -17,9 +16,42 @@ import (
 const baseURL = "https://flamegraph.com"
 
 type BenchmarkReport struct {
-	BaseRef string
-	HeadRef string
-	Runs    []BenchmarkRun
+	BaseRef  string
+	HeadRef  string
+	Runs     []BenchmarkRun
+	Error    error
+	Message  string
+	Finished bool
+}
+
+func (r *BenchmarkReport) MarkdownCompare(githubOwner, githubRepo string) string {
+	if len(r.BaseRef) == 0 || len(r.HeadRef) == 0 {
+		return ""
+	}
+	return fmt.Sprintf(
+		"%s -> %s ([compare](https://github.com/%s/%s/compare/%s...%s))",
+		r.BaseRef,
+		r.HeadRef,
+		githubOwner,
+		githubRepo,
+		r.BaseRef,
+		r.HeadRef,
+	)
+}
+
+func (r *BenchmarkReport) WithMessage(message string) *BenchmarkReport {
+	r.Message = message
+	return r
+}
+
+func (r *BenchmarkReport) WithFinished() *BenchmarkReport {
+	r.Finished = true
+	return r
+}
+
+func (r *BenchmarkReport) WithError(err error) *BenchmarkReport {
+	r.Error = err
+	return r.WithFinished()
 }
 
 type BenchmarkRun struct {
@@ -161,7 +193,6 @@ func AddArgs(cmd *kingpin.CmdClause) *Args {
 
 type Reporter interface {
 	Stop() error
-	HandleError(ctx context.Context, err error)
 }
 
 func NewConsoleReporter(ch <-chan *BenchmarkReport) Reporter {
@@ -184,10 +215,6 @@ func (r *consoleReporter) Stop() error {
 	close(r.stopCh)
 	r.wg.Wait()
 	return nil
-}
-
-func (r *consoleReporter) HandleError(ctx context.Context, err error) {
-	fmt.Printf("Error: %s\n", err)
 }
 
 func (r *consoleReporter) run() {
@@ -248,8 +275,6 @@ type noopReporter struct {
 func (r *noopReporter) Stop() error {
 	return nil
 }
-
-func (r *noopReporter) HandleError(_ context.Context, _ error) {}
 
 func NewNoop(ch <-chan *BenchmarkReport) Reporter {
 	if ch != nil {

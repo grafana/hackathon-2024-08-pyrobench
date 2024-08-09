@@ -1,8 +1,10 @@
 package github
 
 import (
-	"html/template"
+	"errors"
+	"strings"
 	"testing"
+	"text/template"
 
 	"github.com/grafana/pyrobench/report"
 	"github.com/stretchr/testify/require"
@@ -25,6 +27,34 @@ func TestGithubCommentTemplate(t *testing.T) {
 		R        *report.BenchmarkReport
 		expected string
 	}{
+		{
+			Name: "message",
+			R: &report.BenchmarkReport{
+				Message: "no benchmarks to be run",
+			},
+			expected: strings.Join([]string{
+				"### Benchmark Report",
+				"",
+				"__In progress__",
+				"",
+				"no benchmarks to be run",
+				"",
+			}, "\n"),
+		},
+		{
+			Name: "error",
+			R: &report.BenchmarkReport{
+				Error: errors.New("fatally bad"),
+			},
+			expected: strings.Join([]string{
+				"### Benchmark Report",
+				"",
+				"```",
+				"fatally bad",
+				"```",
+				"",
+			}, "\n"),
+		},
 		{
 			Name: "benchmark about to run",
 			R: &report.BenchmarkReport{
@@ -109,8 +139,9 @@ abcd -> ef00 ([compare](https://github.com/my-org/my-repo/compare/abcd...ef00))
 		},
 	} {
 		t.Run(tc.Name, func(t *testing.T) {
-			require.Equal(t, tc.expected, gh.render(tc.R))
-			gh.render(tc.R)
+			body, err := gh.render(tc.R)
+			require.NoError(t, err)
+			require.Equal(t, tc.expected, body)
 		})
 	}
 }

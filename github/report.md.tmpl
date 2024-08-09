@@ -1,10 +1,21 @@
 {{- $global := . -}}
 ### Benchmark Report
+{{- if .Report.Error }}
 
-{{ if .Finished }}__Finished__{{ else }}__In progress__{{ end }}
+```
+{{.Report.Error}}
+```
+{{- else }}
 
-{{.Report.BaseRef}} -> {{.Report.HeadRef}} ([compare](https://github.com/{{ .GitHubOwner }}/{{ .GitHubRepo }}/compare/{{.Report.BaseRef}}...{{.Report.HeadRef}}))
+{{ if .Report.Finished }}__Finished__{{ else }}__In progress__
+{{ end }}
 
+{{- if .Report.Message }}
+{{.Report.Message}}{{end}}
+
+{{- if .Compare }}
+{{.Compare}}
+{{- end}}
 {{- range .Report.Runs }}
 <details>
     <summary><tt>{{.Name}}</tt>{{.Status}}</summary>
@@ -15,4 +26,5 @@
 | {{.Name}} | {{.BaseMarkdown}} | {{.HeadMarkdown}} | {{.DiffMarkdown}} |
 {{- end }}
 </details>
+{{- end }}
 {{- end }}

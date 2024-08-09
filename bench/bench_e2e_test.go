@@ -11,6 +11,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/stretchr/testify/require"
 
+	"github.com/grafana/pyrobench/github"
 	"github.com/grafana/pyrobench/report"
 )
 
@@ -69,6 +70,10 @@ func TestBenchmarkE2E(t *testing.T) {
 		// run the benchmark
 		b, _ := New(logger)
 		require.NoError(t, b.Compare(ctx, &CompareArgs{
+			GitHub: &github.Args{
+				Token:   os.Getenv("GITHUB_TOKEN"),
+				Context: os.Getenv("GITHUB_CONTEXT"),
+			},
 			GitBase:    "HEAD~1",
 			BenchTime:  "200ms",
 			BenchCount: 5,
