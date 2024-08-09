@@ -14,7 +14,7 @@ on: issue_comment
 jobs:
   pyrobench:
     name: Run Pyrobench on demand by PR comment
-    if: ${{ github.event.issue.pull_request }}
+    if: ${{ (github.event.issue.pull_request) && contains(github.event.comment.body, '@pyrobench') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/setup-go@v5
