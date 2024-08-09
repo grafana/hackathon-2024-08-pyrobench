@@ -127,7 +127,7 @@ func (p *Package) listBenchmarksAst(_ context.Context, filters []*BenchmarkFilte
 		ast.Inspect(file, func(n ast.Node) bool {
 			m, ok := isBenchmarkNode(n)
 			if ok {
-				keep := false
+				keep := true
 				if len(filters) > 0 {
 					keep = false
 					for _, filter := range filters {
